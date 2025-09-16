@@ -1,0 +1,17 @@
+# Rastorizer
+
+This project uses Xilinx Vivado to build FPGA designs in batch mode.
+
+## Building the Project
+
+To build the project, run the following command in your terminal:
+
+```sh
+vivado -mode batch -source build.tcl -log build/vivado.log -journal build/vivado.jou
+```
+
+To flash the project, run the following command in your terminal:
+
+```sh
+vivado -mode batch -source flash.tcl -log build/vivado.log -journal build/vivado.jou
+```
