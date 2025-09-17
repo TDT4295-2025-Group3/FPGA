@@ -1,7 +1,3 @@
-// Project F Library - 640x480p60 Clock Generation (XC7)
-// Copyright Will Green, open source hardware released under the MIT License
-// Learn more at https://projectf.io
-
 `default_nettype none
 `timescale 1ns / 1ps
 

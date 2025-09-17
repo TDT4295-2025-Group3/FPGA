@@ -1,3 +1,5 @@
 /build
 /.vscode
 /.Xil
+/sim/obj_dir
+/sim/vga_sim

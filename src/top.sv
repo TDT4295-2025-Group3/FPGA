@@ -1,7 +1,3 @@
-// Project F: FPGA Graphics - Square (Arty Pmod VGA)
-// (C)2023 Will Green, open source hardware released under the MIT License
-// Learn more at https://projectf.io/posts/fpga-graphics/
-
 `default_nettype none
 `timescale 1ns / 1ps
 
@@ -107,8 +103,8 @@ end
     // define a square with screen coordinates
     logic square;
     always_comb begin
-        square = (sx >= $unsigned(square_x)) && (sx < $unsigned(square_x + SQUARE_WIDTH)) &&
-         (sy >= $unsigned(square_y)) && (sy < $unsigned(square_y + SQUARE_HEIGHT));
+        square = ($unsigned(sx) >= square_x) && ($unsigned(sx) < square_x + SQUARE_WIDTH) &&
+         ($unsigned(sy) >= square_y) && ($unsigned(sy) < square_y + SQUARE_HEIGHT);
 
     end
 

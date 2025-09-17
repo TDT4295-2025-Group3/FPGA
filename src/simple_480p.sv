@@ -1,7 +1,3 @@
-// Project F: FPGA Graphics - Simple 640x480p60 Display
-// (C)2023 Will Green, open source hardware released under the MIT License
-// Learn more at https://projectf.io/posts/fpga-graphics/
-
 `default_nettype none
 `timescale 1ns / 1ps
 
