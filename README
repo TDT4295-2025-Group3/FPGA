@@ -15,3 +15,17 @@ To flash the project, run the following command in your terminal:
 ```sh
 vivado -mode batch -source flash.tcl -log build/vivado.log -journal build/vivado.jou
 ```
+
+## VGA simulator
+
+You need the following tools to use the simulator:
+```sh
+sudo apt install verilator libsdl2-dev
+```
+To run it:
+```sh
+cd sim
+make clean // Optional
+make
+./vga_sim
+```
