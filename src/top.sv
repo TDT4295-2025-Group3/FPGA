@@ -10,6 +10,7 @@ module top (
     output      logic [3:0] vga_g,  // 4-bit VGA green
     output      logic [3:0] vga_b   // 4-bit VGA blue
     );
+    import fixed_pkg::*;
 
     // generate pixel clock
     logic clk_pix;
@@ -39,88 +40,73 @@ module top (
     );
 
 
+    localparam logic signed [31:0] TRI_X0 = to_q16_16(100);
+    localparam logic signed [31:0] TRI_Y0 = to_q16_16(50);
+    localparam logic signed [31:0] TRI_Z0 = to_q16_16(100);
+    localparam logic signed [31:0] TRI_X1 = to_q16_16(200);
+    localparam logic signed [31:0] TRI_Y1 = to_q16_16(300);
+    localparam logic signed [31:0] TRI_Z1 = to_q16_16(200);
+    localparam logic signed [31:0] TRI_X2 = to_q16_16(300);
+    localparam logic signed [31:0] TRI_Y2 = to_q16_16(100);
+    localparam logic signed [31:0] TRI_Z2 = to_q16_16(150);
+    localparam logic signed [31:0] TRI_X3 = to_q16_16(250);
+    localparam logic signed [31:0] TRI_Y3 = to_q16_16(310);
+    localparam logic signed [31:0] TRI_Z3 = to_q16_16(250);
+    localparam TRI_C0 = 12'hF00; // red
+    localparam TRI_C1 = 12'h0F0; // green
+    localparam TRI_C2 = 12'h00F; // blue
+    localparam TRI_C3 = 12'hFF0; // yellow
 
-    localparam WIDTH  = 640;
-    localparam HEIGHT = 480;
-
-    localparam SQUARE_HEIGHT  = 100;
-    localparam SQUARE_WIDTH   = 100;
-
-    localparam SPEED = 1; // pixels per frame
-
-    logic signed [10:0] square_x;
-    logic signed [10:0] square_y;
-
-    logic dir_x;
-    logic dir_y;
-
-logic vsync_prev;
-
-always_ff @(posedge clk_pix or negedge btn_rst_n) begin
-    if (!btn_rst_n) begin
-        square_x <= 0;
-        square_y <= 0;
-        dir_x <= 0;
-        dir_y <= 0;
-        vsync_prev <= 0;
-    end else begin
-        vsync_prev <= vsync;  // store previous frame's vsync
-
-        // rising edge detection
-        if (~vsync_prev & vsync)begin
-
-            logic signed [10:0] next_x, next_y;
-
-            next_x = square_x + (dir_x ? SPEED : -SPEED);
-            next_y = square_y + (dir_y ? SPEED : -SPEED);
-
-            // Clamp and change direction
-            if (next_x < 0) begin
-                square_x <= 0;
-                dir_x <= 1;
-            end else if (next_x > WIDTH - SQUARE_WIDTH) begin
-                square_x <= WIDTH - SQUARE_WIDTH;
-                dir_x <= 0;
-            end else
-                square_x <= next_x;
-
-            if (next_y < 0) begin
-                square_y <= 0;
-                dir_y <= 1;
-            end else if (next_y > HEIGHT - SQUARE_HEIGHT) begin
-                square_y <= HEIGHT - SQUARE_HEIGHT;
-                dir_y <= 0;
-            end else
-                square_y <= next_y;
-
-
-        end
-    end
-end
-
-
-
-    // define a square with screen coordinates
-    logic square;
+    logic signed [31:0] px_q, py_q;
     always_comb begin
-        square = ($unsigned(sx) >= square_x) && ($unsigned(sx) < square_x + SQUARE_WIDTH) &&
-         ($unsigned(sy) >= square_y) && ($unsigned(sy) < square_y + SQUARE_HEIGHT);
-
+        px_q = sx <<< 16;
+        py_q = sy <<< 16;
     end
+
+    logic p_inside1;
+    logic [11:0] p_color1;
+    logic signed [31:0] pz1;
+    triangle_pixel_eval tri_fill_inst1 (
+        .ax(TRI_X0), .ay(TRI_Y0), .az(TRI_Z0),
+        .bx(TRI_X1), .by(TRI_Y1), .bz(TRI_Z1),
+        .cx(TRI_X2), .cy(TRI_Y2), .cz(TRI_Z2),
+        .a_color(TRI_C0), .b_color(TRI_C1), .c_color(TRI_C2),
+        .px(px_q), .py(py_q),
+        .pz(pz1),
+        .p_inside(p_inside1),
+        .p_color(p_color1)
+    );
+
+    logic p_inside2;
+    logic [11:0] p_color2;
+    logic signed [31:0] pz2;
+    triangle_pixel_eval tri_fill_inst2 (
+        .ax(TRI_X1), .ay(TRI_Y1), .az(TRI_Z1),
+        .bx(TRI_X2), .by(TRI_Y2), .bz(TRI_Z2),
+        .cx(TRI_X3), .cy(TRI_Y3), .cz(TRI_Z3),
+        .a_color(TRI_C1), .b_color(TRI_C2), .c_color(TRI_C3),
+        .px(px_q), .py(py_q),
+        .pz(pz2),
+        .p_inside(p_inside2),
+        .p_color(p_color2)
+    );
 
     // paint colour: white inside square, blue outside
     logic [3:0] paint_r, paint_g, paint_b;
-    logic [3:0] background_r, background_g, background_b;
     always_comb begin
-
-        //background should be gradient
-        background_r = sx[7:4];
-        background_g = sy[7:4];
-        background_b = 4'h4;
-
-        paint_r = (square) ? background_r : background_b;
-        paint_g = (square) ? background_g : background_r;
-        paint_b = (square) ? background_b : background_g;
+        if (p_inside1) begin
+            paint_r = p_color1[11:8];
+            paint_g = p_color1[7:4];
+            paint_b = p_color1[3:0];
+        end else if (p_inside2) begin
+            paint_r = p_color2[11:8];
+            paint_g = p_color2[7:4];
+            paint_b = p_color2[3:0];
+        end else begin
+            paint_r = 4'h0;
+            paint_g = 4'h0;
+            paint_b = 4'h8;
+        end
     end
 
     // display colour: paint colour but black in blanking interval
