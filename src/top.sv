@@ -29,14 +29,18 @@ module top (
     localparam CORDW = 10;  // screen coordinate width in bits
     logic [CORDW-1:0] sx, sy;
     logic hsync, vsync, de;
-    simple_480p display_inst (
+    display_480p display_inst (
         .clk_pix,
         .rst_pix(!clk_pix_locked),  // wait for clock lock
-        .sx,
-        .sy,
         .hsync,
         .vsync,
-        .de
+        .de,
+        /* verilator lint_off PINCONNECTEMPTY */
+        .frame(),   // not used
+        .line(),    // not used
+        /* verilator lint_on PINCONNECTEMPTY */
+        .sx,
+        .sy
     );
 
 
