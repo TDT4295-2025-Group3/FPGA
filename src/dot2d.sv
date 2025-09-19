@@ -1,13 +1,15 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-// Takes in signed 32-bit (Q16.16) vectors and outputs their dot product (Q32.32)
+import math_pkg::point2d_t;
+import math_pkg::q32_32_t;
+
 module dot2d (
-    input  logic signed [31:0] p0x, input logic signed [31:0] p0y,
-    input  logic signed [31:0] p1x, input logic signed [31:0] p1y,
-    output logic signed [63:0] dot
+    input  point2d_t p0,
+    input  point2d_t p1,
+    output q32_32_t dot
 );
     always_comb begin
-        dot = p0x * p1x + p0y * p1y;
+        dot = p0.x * p1.x + p0.y * p1.y;
     end
 endmodule

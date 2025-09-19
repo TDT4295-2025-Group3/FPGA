@@ -1,3 +1,6 @@
+`default_nettype none
+`timescale 1ns / 1ps
+
 package fixed_pkg;
 
     // Convert 32-bit int to Q16.16 fixed point

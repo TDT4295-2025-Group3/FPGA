@@ -2,131 +2,209 @@
 `timescale 1ns / 1ps
 
 module top (
-    input  wire logic clk_100m,     // 100 MHz clock
-    input  wire logic btn_rst_n,    // reset button
-    output      logic vga_hsync,    // VGA horizontal sync
-    output      logic vga_vsync,    // VGA vertical sync
-    output      logic [3:0] vga_r,  // 4-bit VGA red
-    output      logic [3:0] vga_g,  // 4-bit VGA green
-    output      logic [3:0] vga_b   // 4-bit VGA blue
-    );
+    input  wire logic clk_100m,
+    input  wire logic btn_rst_n,
+    output      logic vga_hsync,
+    output      logic vga_vsync,
+    output      logic [3:0] vga_r,
+    output      logic [3:0] vga_g,
+    output      logic [3:0] vga_b
+);
     import fixed_pkg::*;
+    import math_pkg::*;
+    import color_pkg::*;
 
-    // generate pixel clock
+    // ------------------------------------------------------------------------
+    // Pixel clock and display timing
+    // ------------------------------------------------------------------------
     logic clk_pix;
     logic clk_pix_locked;
     clock_480p clock_pix_inst (
-       .clk_100m,
-       .rst(!btn_rst_n),  // reset button is active low
-       .clk_pix,
-       /* verilator lint_off PINCONNECTEMPTY */
-       .clk_pix_5x(),  // not used for VGA output
-       /* verilator lint_on PINCONNECTEMPTY */
-       .clk_pix_locked
+        .clk_100m,
+        .rst(!btn_rst_n),
+        .clk_pix,
+        /* verilator lint_off PINCONNECTEMPTY */
+        .clk_pix_5x(),
+        /* verilator lint_on PINCONNECTEMPTY */
+        .clk_pix_locked
     );
 
-    // display sync signals and coordinates
-    localparam CORDW = 10;  // screen coordinate width in bits
+    localparam CORDW = 10;
     logic [CORDW-1:0] sx, sy;
-    logic hsync, vsync, de;
+    logic hsync, vsync, de, frame;
+
     display_480p display_inst (
         .clk_pix,
-        .rst_pix(!clk_pix_locked),  // wait for clock lock
+        .rst_pix(!clk_pix_locked),
         .hsync,
         .vsync,
         .de,
+        .frame,
         /* verilator lint_off PINCONNECTEMPTY */
-        .frame(),   // not used
-        .line(),    // not used
+        .line(),
         /* verilator lint_on PINCONNECTEMPTY */
         .sx,
         .sy
     );
 
+    // ------------------------------------------------------------------------
+    // Framebuffer (320x240)
+    // ------------------------------------------------------------------------
+    logic [8:0]  fb_read_x = sx[9:1]; // divide by 2 for downscale
+    logic [7:0]  fb_read_y = sy[8:1];
+    logic [11:0] fb_read_data;
 
-    localparam logic signed [31:0] TRI_X0 = to_q16_16(100);
-    localparam logic signed [31:0] TRI_Y0 = to_q16_16(50);
-    localparam logic signed [31:0] TRI_Z0 = to_q16_16(100);
-    localparam logic signed [31:0] TRI_X1 = to_q16_16(200);
-    localparam logic signed [31:0] TRI_Y1 = to_q16_16(300);
-    localparam logic signed [31:0] TRI_Z1 = to_q16_16(200);
-    localparam logic signed [31:0] TRI_X2 = to_q16_16(300);
-    localparam logic signed [31:0] TRI_Y2 = to_q16_16(100);
-    localparam logic signed [31:0] TRI_Z2 = to_q16_16(150);
-    localparam logic signed [31:0] TRI_X3 = to_q16_16(250);
-    localparam logic signed [31:0] TRI_Y3 = to_q16_16(310);
-    localparam logic signed [31:0] TRI_Z3 = to_q16_16(250);
-    localparam TRI_C0 = 12'hF00; // red
-    localparam TRI_C1 = 12'h0F0; // green
-    localparam TRI_C2 = 12'h00F; // blue
-    localparam TRI_C3 = 12'hFF0; // yellow
+    logic [8:0]  renderer_x;
+    logic [7:0]  renderer_y;
+    logic        renderer_we;
+    logic [11:0] renderer_color;
 
-    logic signed [31:0] px_q, py_q;
-    always_comb begin
-        px_q = sx <<< 16;
-        py_q = sy <<< 16;
-    end
+    double_framebuffer #(
+        .FB_WIDTH (320),
+        .FB_HEIGHT(240)
+    ) framebuffer_inst (
+        .clk_write(clk_100m), // Renderer clock
+        .clk_read(clk_pix),   // VGA clock
+        .swap(frame),
+        .rst(!btn_rst_n),
 
-    logic p_inside1;
-    logic [11:0] p_color1;
-    logic signed [31:0] pz1;
-    triangle_pixel_eval tri_fill_inst1 (
-        .ax(TRI_X0), .ay(TRI_Y0), .az(TRI_Z0),
-        .bx(TRI_X1), .by(TRI_Y1), .bz(TRI_Z1),
-        .cx(TRI_X2), .cy(TRI_Y2), .cz(TRI_Z2),
-        .a_color(TRI_C0), .b_color(TRI_C1), .c_color(TRI_C2),
-        .px(px_q), .py(py_q),
-        .pz(pz1),
-        .p_inside(p_inside1),
-        .p_color(p_color1)
+        .write_enable(renderer_we),
+        .write_x(renderer_x),
+        .write_y(renderer_y),
+        .write_data(renderer_color),
+
+        .read_x(fb_read_x),
+        .read_y(fb_read_y),
+        .read_data(fb_read_data)
     );
 
-    logic p_inside2;
-    logic [11:0] p_color2;
-    logic signed [31:0] pz2;
-    triangle_pixel_eval tri_fill_inst2 (
-        .ax(TRI_X1), .ay(TRI_Y1), .az(TRI_Z1),
-        .bx(TRI_X2), .by(TRI_Y2), .bz(TRI_Z2),
-        .cx(TRI_X3), .cy(TRI_Y3), .cz(TRI_Z3),
-        .a_color(TRI_C1), .b_color(TRI_C2), .c_color(TRI_C3),
-        .px(px_q), .py(py_q),
-        .pz(pz2),
-        .p_inside(p_inside2),
-        .p_color(p_color2)
-    );
+    // ------------------------------------------------------------------------
+    // Triangle setup
+    // ------------------------------------------------------------------------
+    localparam color12_t BG_COLOR = '{r:4'h1, g:4'h2, b:4'h3};
 
-    // paint colour: white inside square, blue outside
-    logic [3:0] paint_r, paint_g, paint_b;
-    always_comb begin
-        if (p_inside1) begin
-            paint_r = p_color1[11:8];
-            paint_g = p_color1[7:4];
-            paint_b = p_color1[3:0];
-        end else if (p_inside2) begin
-            paint_r = p_color2[11:8];
-            paint_g = p_color2[7:4];
-            paint_b = p_color2[3:0];
-        end else begin
-            paint_r = 4'h0;
-            paint_g = 4'h0;
-            paint_b = 4'h8;
+    // Animate TRI0 position over time
+    point3d_t TRI0;
+    logic [7:0] anim_cnt;
+
+    always_ff @(posedge clk_100m or negedge btn_rst_n) begin
+        if (!btn_rst_n) begin
+            anim_cnt <= 0;
+        end else if (frame) begin
+            anim_cnt <= anim_cnt + 1;
         end
     end
 
-    // display colour: paint colour but black in blanking interval
-    logic [3:0] display_r, display_g, display_b;
     always_comb begin
-        display_r = (de) ? paint_r : 4'h0;
-        display_g = (de) ? paint_g : 4'h0;
-        display_b = (de) ? paint_b : 4'h0;
+        TRI0.x = to_q16_16(50) + to_q16_16($signed(anim_cnt[7:0]));
+        TRI0.y = to_q16_16(25) + to_q16_16($signed(anim_cnt[7:0] >> 1));
+        TRI0.z = to_q16_16(50);
+    end
+    localparam point3d_t TRI1 = '{to_q16_16(100), to_q16_16(150), to_q16_16(100)};
+    localparam point3d_t TRI2 = '{to_q16_16(150), to_q16_16(50), to_q16_16(75)};
+    localparam point3d_t TRI3 = '{to_q16_16(200), to_q16_16(155), to_q16_16(125)};
+
+    localparam color12_t C0 = '{r:4'hF, g:4'h8, b:4'h0};
+    localparam color12_t C1 = '{r:4'h8, g:4'h0, b:4'h5};
+    localparam color12_t C2 = '{r:4'h0, g:4'h8, b:4'h8};
+    localparam color12_t C3 = '{r:4'hF, g:4'hF, b:4'h0};
+
+    // ------------------------------------------------------------------------
+    // Triangle evaluators (shared for renderer)
+    // ------------------------------------------------------------------------
+    point2d_t p;             // moved outside procedural block
+    color12_t paint_color;   // moved outside procedural block
+
+    logic p_inside1, p_inside2;
+    color12_t p_color1, p_color2;
+    q16_16_t pz1, pz2;
+
+    triangle_pixel_eval tri_fill_inst1 (
+        .a(TRI0), .b(TRI1), .c(TRI2),
+        .a_color(C0), .b_color(C1), .c_color(C2),
+        .p(p), .p_z(pz1), .p_inside(p_inside1), .p_color(p_color1)
+    );
+
+    triangle_pixel_eval tri_fill_inst2 (
+        .a(TRI1), .b(TRI2), .c(TRI3),
+        .a_color(C1), .b_color(C2), .c_color(C3),
+        .p(p), .p_z(pz2), .p_inside(p_inside2), .p_color(p_color2)
+    );
+
+    // ------------------------------------------------------------------------
+    // Renderer FSM (runs on clk_100m)
+    // ------------------------------------------------------------------------
+    typedef enum logic [1:0] {IDLE, DRAWING, WAIT_SWAP} render_state_t;
+    render_state_t state;
+
+        always_ff @(posedge clk_100m or negedge btn_rst_n) begin
+        if (!btn_rst_n) begin
+            state <= IDLE;
+            renderer_x <= 0;
+            renderer_y <= 0;
+            renderer_we <= 0;
+            renderer_color <= 12'h000;
+            paint_color <= BG_COLOR;
+            p.x <= 0;
+            p.y <= 0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    renderer_we <= 0;
+                    if (frame) begin
+                        // Only start drawing at start-of-frame
+                        renderer_x <= 0;
+                        renderer_y <= 0;
+                        state <= DRAWING;
+                    end
+                end
+
+                DRAWING: begin
+                    p.x <= to_q16_16(renderer_x <<< 1);
+                    p.y <= to_q16_16(renderer_y <<< 1);
+
+                    if (p_inside1)      paint_color <= p_color1;
+                    else if (p_inside2) paint_color <= p_color2;
+                    else                paint_color <= BG_COLOR;
+
+                    renderer_color <= {paint_color.r, paint_color.g, paint_color.b};
+                    renderer_we <= 1'b1;
+
+                    if (renderer_x == 319) begin
+                        renderer_x <= 0;
+                        if (renderer_y == 239) begin
+                            renderer_y <= 0;
+                            renderer_we <= 0;
+                            state <= WAIT_SWAP;
+                        end else begin
+                            renderer_y <= renderer_y + 1;
+                        end
+                    end else begin
+                        renderer_x <= renderer_x + 1;
+                    end
+                end
+
+                WAIT_SWAP: begin
+                    renderer_we <= 0;
+                    // Wait until the NEXT frame pulse before going to IDLE
+                    if (frame) state <= IDLE;
+                end
+
+                default: state <= IDLE;
+            endcase
+        end
     end
 
-    // VGA Pmod output
+
+    // ------------------------------------------------------------------------
+    // VGA Output (read side)
+    // ------------------------------------------------------------------------
     always_ff @(posedge clk_pix) begin
         vga_hsync <= hsync;
         vga_vsync <= vsync;
-        vga_r <= display_r;
-        vga_g <= display_g;
-        vga_b <= display_b;
+        vga_r     <= de ? fb_read_data[11:8] : 4'h0;
+        vga_g     <= de ? fb_read_data[7:4]  : 4'h0;
+        vga_b     <= de ? fb_read_data[3:0]  : 4'h0;
     end
+
 endmodule

@@ -1,36 +1,48 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
+import math_pkg::point2d_t;
+import math_pkg::point3d_t;
+import math_pkg::q16_16_t;
+import math_pkg::q32_32_t;
+import math_pkg::q64_64_t;
+import color_pkg::color12_t;
+
 module triangle_pixel_eval (
-    input  logic signed [31:0] ax, ay, az,
-    input  logic signed [31:0] bx, by, bz,
-    input  logic signed [31:0] cx, cy, cz,
-    input  logic [11:0] a_color, b_color, c_color,
-    input  logic signed [31:0] px, py,
-    output logic signed [31:0] pz,
+    input  point3d_t a,
+    input  point3d_t b,
+    input  point3d_t c,
+    input  color12_t a_color, b_color, c_color,
+    input  point2d_t p,
+    output q16_16_t p_z,
     output logic p_inside,
-    output logic [11:0] p_color
+    output color12_t p_color
 );
-    logic signed [31:0] v0x = bx - ax;
-    logic signed [31:0] v0y = by - ay;
-    logic signed [31:0] v1x = cx - ax;
-    logic signed [31:0] v1y = cy - ay;
-    logic signed [31:0] v2x = px - ax;
-    logic signed [31:0] v2y = py - ay;
+    q16_16_t v0x, v0y, v1x, v1y, v2x, v2y;
 
-    logic signed [63:0] d00, d01, d11, d20, d21;
-    dot2d dot00_inst (.p0x(v0x), .p0y(v0y), .p1x(v0x), .p1y(v0y), .dot(d00));
-    dot2d dot01_inst (.p0x(v0x), .p0y(v0y), .p1x(v1x), .p1y(v1y), .dot(d01));
-    dot2d dot11_inst (.p0x(v1x), .p0y(v1y), .p1x(v1x), .p1y(v1y), .dot(d11));
-    dot2d dot20_inst (.p0x(v2x), .p0y(v2y), .p1x(v0x), .p1y(v0y), .dot(d20));
-    dot2d dot21_inst (.p0x(v2x), .p0y(v2y), .p1x(v1x), .p1y(v1y), .dot(d21));
+    assign v0x = b.x - a.x;
+    assign v0y = b.y - a.y;
+    assign v1x = c.x - a.x;
+    assign v1y = c.y - a.y;
+    assign v2x = p.x - a.x;
+    assign v2y = p.y - a.y;
 
-    logic signed [127:0] denom = d00 * d11 - d01 * d01;
-    logic signed [127:0] v_num = d11 * d20 - d01 * d21;
-    logic signed [127:0] w_num = d00 * d21 - d01 * d20;
-    logic signed [127:0] u_num = denom - v_num - w_num;
 
-    logic signed [31:0] u, v, w;
+    q32_32_t d00, d01, d11, d20, d21;
+    dot2d dot00_inst (.p0('{v0x, v0y}), .p1('{v0x, v0y}), .dot(d00));
+    dot2d dot01_inst (.p0('{v0x, v0y}), .p1('{v1x, v1y}), .dot(d01));
+    dot2d dot11_inst (.p0('{v1x, v1y}), .p1('{v1x, v1y}), .dot(d11));
+    dot2d dot20_inst (.p0('{v2x, v2y}), .p1('{v0x, v0y}), .dot(d20));
+    dot2d dot21_inst (.p0('{v2x, v2y}), .p1('{v1x, v1y}), .dot(d21));
+
+    q64_64_t denom, v_num, w_num, u_num;
+    
+    assign denom = d00 * d11 - d01 * d01;
+    assign v_num = d11 * d20 - d01 * d21;
+    assign w_num = d00 * d21 - d01 * d20;
+    assign u_num = denom - v_num - w_num;
+
+    q16_16_t u, v, w;
     always_comb begin
         if (denom != 0) begin
             v = (v_num <<< 16) / denom;
@@ -50,10 +62,10 @@ module triangle_pixel_eval (
             p_color[7:4]  = (u * a_color[7:4]  + v * b_color[7:4]  + w * c_color[7:4])  >>> 16;
             p_color[3:0]  = (u * a_color[3:0]  + v * b_color[3:0]  + w * c_color[3:0])  >>> 16;
 
-            pz = (u * az + v * bz + w * cz) >>> 16;
+            p_z = (u * a.z + v * b.z + w * c.z) >>> 16;
         end else begin
             p_color = 12'b0;
-            pz = 32'b0;
+            p_z = 32'b0;
         end
     end
 
