@@ -4,29 +4,29 @@
 import color_pkg::color12_t;
 
 module double_framebuffer #(
-    parameter FB_WIDTH = 320,
-    parameter FB_HEIGHT = 240
+    parameter int FB_WIDTH = 320,
+    parameter int FB_HEIGHT = 240
 ) (
-    input  logic        clk_write,   // clock for writing (from renderer)
-    input  logic        clk_read,    // clock for reading (to VGA)
-    input  logic        swap,        // signal to swap buffers
-    input  logic        rst,
+    input  wire logic        clk_write,   // clock for writing (from renderer)
+    input  wire logic        clk_read,    // clock for reading (to VGA)
+    input  wire logic        swap,        // signal to swap buffers
+    input  wire logic        rst,
 
     // Write interface (from renderer)
-    input  logic        write_enable,
-    input  logic [$clog2(FB_WIDTH)-1:0] write_x,
-    input  logic [$clog2(FB_HEIGHT)-1:0] write_y,
-    input  color12_t write_data,
+    input  wire logic        write_enable,
+    input  wire logic [$clog2(FB_WIDTH)-1:0] write_x,
+    input  wire logic [$clog2(FB_HEIGHT)-1:0] write_y,
+    input  wire color12_t write_data,
 
     // Read interface (to VGA output)
-    input  logic [$clog2(FB_WIDTH)-1:0]  read_x,
-    input  logic [$clog2(FB_HEIGHT)-1:0] read_y,
+    input  wire logic [$clog2(FB_WIDTH)-1:0]  read_x,
+    input  wire logic [$clog2(FB_HEIGHT)-1:0] read_y,
     output color12_t read_data
 );
 
     // Two framebuffers
-    (* ram_style = "block" *) color12_t framebufferA [0:FB_WIDTH*FB_HEIGHT-1];
-    (* ram_style = "block" *) color12_t framebufferB [0:FB_WIDTH*FB_HEIGHT-1];
+    (* ram_style = "block" *) logic [11:0] framebufferA [0:FB_WIDTH*FB_HEIGHT-1];
+    (* ram_style = "block" *) logic [11:0] framebufferB [0:FB_WIDTH*FB_HEIGHT-1];
 
 
     typedef enum logic {FB_A, FB_B} fb_select_t;

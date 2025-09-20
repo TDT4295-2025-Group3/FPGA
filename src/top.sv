@@ -10,6 +10,8 @@ module top (
     output      logic [3:0] vga_g,
     output      logic [3:0] vga_b
 );
+
+
     import fixed_pkg::*;
     import math_pkg::*;
     import color_pkg::*;
@@ -29,6 +31,7 @@ module top (
         .clk_pix_locked
     );
 
+    // SX/SY are still 640x480 coordinates from display_480p
     localparam CORDW = 10;
     logic [CORDW-1:0] sx, sy;
     logic hsync, vsync, de, frame;
@@ -48,20 +51,21 @@ module top (
     );
 
     // ------------------------------------------------------------------------
-    // Framebuffer (320x240)
+    // Framebuffer (160x120)
     // ------------------------------------------------------------------------
-    logic [8:0]  fb_read_x = sx[9:1]; // divide by 2 for downscale
-    logic [7:0]  fb_read_y = sy[8:1];
+    // Divide by 4 instead of 2 (>>2) so 640x480 → 160x120 mapping
+    logic [7:0]  fb_read_x = sx[9:2];
+    logic [6:0]  fb_read_y = sy[8:2];
     logic [11:0] fb_read_data;
 
-    logic [8:0]  renderer_x;
-    logic [7:0]  renderer_y;
+    logic [7:0]  renderer_x;
+    logic [6:0]  renderer_y;
     logic        renderer_we;
     logic [11:0] renderer_color;
 
     double_framebuffer #(
-        .FB_WIDTH (320),
-        .FB_HEIGHT(240)
+        .FB_WIDTH (160),
+        .FB_HEIGHT(120)
     ) framebuffer_inst (
         .clk_write(clk_100m), // Renderer clock
         .clk_read(clk_pix),   // VGA clock
@@ -83,38 +87,34 @@ module top (
     // ------------------------------------------------------------------------
     localparam color12_t BG_COLOR = '{r:4'h1, g:4'h2, b:4'h3};
 
-    // Animate TRI0 position over time
     point3d_t TRI0;
     logic [7:0] anim_cnt;
 
     always_ff @(posedge clk_100m or negedge btn_rst_n) begin
-        if (!btn_rst_n) begin
+        if (!btn_rst_n)
             anim_cnt <= 0;
-        end else if (frame) begin
+        else if (frame)
             anim_cnt <= anim_cnt + 1;
-        end
     end
 
     always_comb begin
-        TRI0.x = to_q16_16(50) + to_q16_16($signed(anim_cnt[7:0]));
-        TRI0.y = to_q16_16(25) + to_q16_16($signed(anim_cnt[7:0] >> 1));
-        TRI0.z = to_q16_16(50);
+        TRI0.x = to_q16_16(25) + to_q16_16($signed(anim_cnt));
+        TRI0.y = to_q16_16(15) + to_q16_16($signed(anim_cnt >> 1));
+        TRI0.z = to_q16_16(30);
     end
-    localparam point3d_t TRI1 = '{to_q16_16(100), to_q16_16(150), to_q16_16(100)};
-    localparam point3d_t TRI2 = '{to_q16_16(150), to_q16_16(50), to_q16_16(75)};
-    localparam point3d_t TRI3 = '{to_q16_16(200), to_q16_16(155), to_q16_16(125)};
+
+    // Adjust triangle coordinates to fit in 160x120 space
+    localparam point3d_t TRI1 = '{to_q16_16(50),  to_q16_16( 90), to_q16_16( 50)};
+    localparam point3d_t TRI2 = '{to_q16_16(100), to_q16_16( 30), to_q16_16( 75)};
+    localparam point3d_t TRI3 = '{to_q16_16(140), to_q16_16(100), to_q16_16(125)};
 
     localparam color12_t C0 = '{r:4'hF, g:4'h8, b:4'h0};
     localparam color12_t C1 = '{r:4'h8, g:4'h0, b:4'h5};
     localparam color12_t C2 = '{r:4'h0, g:4'h8, b:4'h8};
     localparam color12_t C3 = '{r:4'hF, g:4'hF, b:4'h0};
 
-    // ------------------------------------------------------------------------
-    // Triangle evaluators (shared for renderer)
-    // ------------------------------------------------------------------------
-    point2d_t p;             // moved outside procedural block
-    color12_t paint_color;   // moved outside procedural block
-
+    point2d_t p;
+    color12_t paint_color;
     logic p_inside1, p_inside2;
     color12_t p_color1, p_color2;
     q16_16_t pz1, pz2;
@@ -137,7 +137,7 @@ module top (
     typedef enum logic [1:0] {IDLE, DRAWING, WAIT_SWAP} render_state_t;
     render_state_t state;
 
-        always_ff @(posedge clk_100m or negedge btn_rst_n) begin
+    always_ff @(posedge clk_100m or negedge btn_rst_n) begin
         if (!btn_rst_n) begin
             state <= IDLE;
             renderer_x <= 0;
@@ -152,7 +152,6 @@ module top (
                 IDLE: begin
                     renderer_we <= 0;
                     if (frame) begin
-                        // Only start drawing at start-of-frame
                         renderer_x <= 0;
                         renderer_y <= 0;
                         state <= DRAWING;
@@ -160,8 +159,8 @@ module top (
                 end
 
                 DRAWING: begin
-                    p.x <= to_q16_16(renderer_x <<< 1);
-                    p.y <= to_q16_16(renderer_y <<< 1);
+                    p.x <= to_q16_16(renderer_x <<< 2); // scale up to match 640x480
+                    p.y <= to_q16_16(renderer_y <<< 2);
 
                     if (p_inside1)      paint_color <= p_color1;
                     else if (p_inside2) paint_color <= p_color2;
@@ -170,9 +169,9 @@ module top (
                     renderer_color <= {paint_color.r, paint_color.g, paint_color.b};
                     renderer_we <= 1'b1;
 
-                    if (renderer_x == 319) begin
+                    if (renderer_x == 159) begin
                         renderer_x <= 0;
-                        if (renderer_y == 239) begin
+                        if (renderer_y == 119) begin
                             renderer_y <= 0;
                             renderer_we <= 0;
                             state <= WAIT_SWAP;
@@ -186,7 +185,6 @@ module top (
 
                 WAIT_SWAP: begin
                     renderer_we <= 0;
-                    // Wait until the NEXT frame pulse before going to IDLE
                     if (frame) state <= IDLE;
                 end
 
@@ -194,7 +192,6 @@ module top (
             endcase
         end
     end
-
 
     // ------------------------------------------------------------------------
     // VGA Output (read side)
