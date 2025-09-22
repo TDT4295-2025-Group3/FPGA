@@ -7,10 +7,37 @@ const int HEIGHT = 480;
 const int OFFSET_X = 144;
 const int OFFSET_Y = 34;
 
+void waitForSpacePressAndRelease()
+{
+    bool spacePressed = false;
+    bool spaceReleased = false;
+
+    while (!spaceReleased)
+    {
+        SDL_PumpEvents();
+        const Uint8 *state = SDL_GetKeyboardState(NULL);
+
+        if (state[SDL_SCANCODE_SPACE])
+        {
+            spacePressed = true;
+        }
+
+        // Once space was pressed, wait for it to be released
+        if (spacePressed && !state[SDL_SCANCODE_SPACE])
+        {
+            spaceReleased = true;
+        }
+
+        SDL_Delay(10); // small delay to avoid busy loop
+    }
+}
+
 int main(int argc, char **argv)
 {
     Verilated::commandArgs(argc, argv);
     Vtop_sim *top = new Vtop_sim;
+    top->btn_rst_n = 0;
+    top->eval();
     top->btn_rst_n = 1;
 
     // --- SDL setup ---
@@ -49,6 +76,12 @@ int main(int argc, char **argv)
             // Toggle 100 MHz clock
             top->clk_100m = !top->clk_100m;
             top->eval();
+
+            // Wait until space is pressed before proceeding
+            // if (top->clk_100m)
+            // {
+            //     waitForSpacePressAndRelease();
+            // }
 
             // Detect rising edge of pixel clock
             if (!prev_clk_pix && top->clk_pix)
