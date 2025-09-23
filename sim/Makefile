@@ -11,7 +11,7 @@ VERILATOR_FLAGS = --trace -cc --exe \
 
 FILELIST   = ../filelist.f
 SOURCELIST := $(shell cat $(FILELIST))
-SRC      := $(addprefix ../, $(SOURCELIST)) stubs/BUFG.sv stubs/MMCME2_BASE.sv main.cpp top_sim.sv
+SRC      := $(addprefix ../, $(SOURCELIST)) stubs/BUFG.sv stubs/MMCME2_BASE.sv stubs/xpm_memory_tdpram.sv main.cpp top_sim.sv
 
 TOP_MODULE = top_sim
 BUILD_DIR  = obj_dir
