@@ -3,6 +3,7 @@
 
 package math_pkg;
 
+    typedef logic signed [16:0] q0_16_t; // 1 sign bit, 0 integer bits, 16 fractional bits
     typedef logic signed [31:0] q16_16_t;
     typedef logic signed [63:0] q32_32_t;
     typedef logic signed [127:0] q64_64_t;
@@ -45,37 +46,18 @@ package math_pkg;
         return (m > c) ? m : c;
     endfunction
 
-    function automatic point2d_t point2d_sub(input point2d_t p1, p2);
-        point2d_t result;
-        result.x = p1.x - p2.x;
-        result.y = p1.y - p2.y;
-        return result;
-    endfunction
-
-    function automatic q32_32_t cross2d(input point2d_t p1, p2);
-        return (p1.x * p2.y) - (p1.y * p2.x);
-    endfunction
-
     function automatic q32_32_t dot2d(input point2d_t p1, p2);
         return (p1.x * p2.x) + (p1.y * p2.y);
     endfunction
 
-    function automatic q16_16_t div_q32_32_to_q16_16(input q32_32_t num, input q32_32_t den);
-    q64_64_t a = $signed(num);
-    q64_64_t b = $signed(den);
+    function automatic q0_16_t clamp_to_q0_16(input q16_16_t val);
+        logic signed [31:0] s = val;          // signed for proper comparisons
 
-    // abs values
-    q64_64_t a_abs = (a < 0) ? -a : a;
-    q64_64_t b_abs = (b < 0) ? -b : b;
+        // Saturate to [-65536, +65535] == [-1.0, +0.999984...] in Q0.16
+        if (s >  32'sd65535)        return 17'sd65535;   // +0x0_FFFF
+        else if (s < -32'sd65536)   return -17'sd65536;  // -0x1_0000
+        else                        return q0_16_t'(s);  // resize; keeps sign + frac
+    endfunction
 
-    // round-to-nearest: (a<<16 + b/2) / b, done in abs-space
-    q64_64_t res_abs = ((a_abs <<< 16) + (b_abs >>> 1)) / b_abs;
-
-    // restore sign
-    q64_64_t res = ((a ^ b) < 0) ? -res_abs : res_abs;
-
-    // narrow to Q16.16
-    return q16_16_t'(res[31:0]);
-endfunction
 
 endpackage

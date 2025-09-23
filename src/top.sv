@@ -63,8 +63,8 @@ module top (
     logic [11:0] renderer_color;
     logic renderer_busy;
 
-    localparam FB_WIDTH  = 80;
-    localparam FB_HEIGHT = 60;
+    localparam FB_WIDTH  = 160;
+    localparam FB_HEIGHT = 120;
 
     double_framebuffer #(
         .FB_WIDTH (FB_WIDTH),
