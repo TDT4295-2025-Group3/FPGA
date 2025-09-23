@@ -9,6 +9,7 @@ src/rasterizer/pixel_traversal.sv
 src/rasterizer/pixel_eval.sv
 src/rasterizer/rasterizer.sv
 
+src/bram_sdp.sv
 src/double_framebuffer.sv
 
 src/clock_480p.sv

@@ -5,16 +5,16 @@
     import math_pkg::*;
 
     module pixel_traversal (
-        input  logic                 clk,
-        input  logic                 rst,
+        input wire logic                 clk,
+        input wire logic                 rst,
 
-        input  logic                 in_valid,
+        input wire logic                 in_valid,
         input  triangle_state_t      in_state,
         output logic                 in_ready,
 
         output logic                 out_valid,
         output pixel_state_t         out_pixel,
-        input  logic                 out_ready
+        input wire logic                 out_ready
     );
 
         typedef enum logic [1:0] {IDLE, RUN, WAIT_OUT} state_t;

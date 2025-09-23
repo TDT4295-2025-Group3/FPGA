@@ -10,14 +10,14 @@ module triangle_setup #(
     parameter int WIDTH  = 320,
     parameter int HEIGHT = 240
 ) (
-    input  logic clk,
-    input  logic rst,
+    input wire logic clk,
+    input wire logic rst,
 
-    input  vertex_t v0,
-    input  vertex_t v1,
-    input  vertex_t v2,
+    input wire vertex_t v0,
+    input wire vertex_t v1,
+    input wire vertex_t v2,
 
-    input  logic    in_valid,
+    input wire logic    in_valid,
     output logic    in_ready,
 
     output triangle_state_t out_state,

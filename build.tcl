@@ -34,17 +34,24 @@ foreach f $all_sv_files {
     }
 }
 
-# Read package files first (always -sv)
-foreach file [lsort $pkg_files] {
-    puts "Reading package file (SystemVerilog): $file"
-    read_verilog -sv $file
+# Read files from filelist.f (one file per line)
+set filelist_path "../filelist.f"
+if {[file exists $filelist_path]} {
+    set fp [open $filelist_path r]
+    set files [split [read $fp] "\n"]
+    close $fp
+    foreach file $files {
+        if {[string trim $file] eq ""} { continue }
+        puts "Reading file (SystemVerilog): ../$file"
+        read_verilog -sv ../$file
+    }
+} else {
+    puts "ERROR: filelist.f not found at $filelist_path"
+    exit 1
 }
 
-# Then read other design files (always -sv)
-foreach file [lsort $other_files] {
-    puts "Reading design file (SystemVerilog): $file"
-    read_verilog -sv $file
-}
+read_verilog -library xpm $::env(XILINX_VIVADO)/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv
+
 
 # Read constraint file (if exists)
 if {[file exists ../constraints/arty.xdc]} {

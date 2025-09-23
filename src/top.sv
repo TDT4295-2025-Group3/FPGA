@@ -63,9 +63,12 @@ module top (
     logic [11:0] renderer_color;
     logic renderer_busy;
 
+    localparam FB_WIDTH  = 80;
+    localparam FB_HEIGHT = 60;
+
     double_framebuffer #(
-        .FB_WIDTH (160),
-        .FB_HEIGHT(120)
+        .FB_WIDTH (FB_WIDTH),
+        .FB_HEIGHT(FB_HEIGHT)
     ) framebuffer_inst (
         .clk_write(clk_100m), // Renderer clock
         .clk_read(clk_pix),   // VGA clock
@@ -105,8 +108,8 @@ module top (
     localparam color12_t C3 = '{r:4'hF, g:4'hF, b:4'h0};
 
     rasterizer #(
-        .WIDTH(160),
-        .HEIGHT(120)
+        .WIDTH(FB_WIDTH),
+        .HEIGHT(FB_HEIGHT)
     ) rasterizer_inst (
         .clk(clk_100m),
         .rst(!btn_rst_n),

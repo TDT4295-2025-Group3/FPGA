@@ -18,7 +18,7 @@ module rasterizer #(
     input  vertex_t v1,
     input  vertex_t v2,
     
-    input  logic in_valid,
+    input wire logic in_valid,
     output logic in_ready,
 
     output logic [15:0]  out_pixel_x,
