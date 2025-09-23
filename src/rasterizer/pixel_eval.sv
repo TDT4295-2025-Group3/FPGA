@@ -47,6 +47,13 @@ module pixel_eval #(
 
 
     q64_64_t denom, v_num, w_num, u_num;
+    q64_64_t denom_comb, v_num_comb, w_num_comb, u_num_comb;
+    always_comb begin
+        denom_comb = d00 * d11 - d01 * d01;
+        v_num_comb = d11 * d20 - d01 * d21;
+        w_num_comb = d00 * d21 - d01 * d20;
+        u_num_comb = denom_comb - v_num_comb - w_num_comb;
+    end
     
     logic valid_reg;
     pixel_state_t pixel_reg;
@@ -72,10 +79,10 @@ module pixel_eval #(
             end
             else begin
                 // Pipeline stage 1
-                denom <= d00 * d11 - d01 * d01;
-                v_num <= d11 * d20 - d01 * d21;
-                w_num <= d00 * d21 - d01 * d20;
-                u_num <= (d00 * d11 - d01 * d01) -  (d11 * d20 - d01 * d21) - (d00 * d21 - d01 * d20); // FIXME: denom - v_num - w_num;
+                denom <= denom_comb;
+                v_num <= v_num_comb;
+                w_num <= w_num_comb;
+                u_num <= u_num_comb;
                 valid_reg <= in_valid;
                 pixel_reg <= in_pixel;
 
