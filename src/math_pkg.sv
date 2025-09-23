@@ -3,7 +3,6 @@
 
 package math_pkg;
 
-    typedef logic signed [16:0] q0_16_t; // 1 sign bit, 0 integer bits, 16 fractional bits
     typedef logic signed [31:0] q16_16_t;
     typedef logic signed [63:0] q32_32_t;
     typedef logic signed [127:0] q64_64_t;
@@ -49,15 +48,5 @@ package math_pkg;
     function automatic q32_32_t dot2d(input point2d_t p1, p2);
         return (p1.x * p2.x) + (p1.y * p2.y);
     endfunction
-
-    function automatic q0_16_t clamp_to_q0_16(input q16_16_t val);
-        logic signed [31:0] s = val;          // signed for proper comparisons
-
-        // Saturate to [-65536, +65535] == [-1.0, +0.999984...] in Q0.16
-        if (s >  32'sd65535)        return 17'sd65535;   // +0x0_FFFF
-        else if (s < -32'sd65536)   return -17'sd65536;  // -0x1_0000
-        else                        return q0_16_t'(s);  // resize; keeps sign + frac
-    endfunction
-
 
 endpackage
