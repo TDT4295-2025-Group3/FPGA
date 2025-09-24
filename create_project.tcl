@@ -77,6 +77,16 @@ if {[llength $other_files] > 0} {
 }
 
 # ---------------------------------------------------
+# Collect SystemVerilog testbenches in ../tb
+set tb_sv_files [get_sv_files ../tb]
+
+if {[llength $tb_sv_files] > 0} {
+    puts "Adding testbench files from ../tb..."
+    add_files -fileset sim_1 $tb_sv_files
+}
+
+
+# ---------------------------------------------------
 # Constraints
 if {[file exists ../constraints/arty.xdc]} {
     puts "Adding constraints: ../constraints/arty.xdc"

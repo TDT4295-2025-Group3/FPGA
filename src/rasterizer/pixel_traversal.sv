@@ -1,79 +1,126 @@
-    `default_nettype none
-    `timescale 1ns / 1ps
+`default_nettype none
+`timescale 1ns / 1ps
 
-    import rasterizer_pkg::*;
-    import math_pkg::*;
+import rasterizer_pkg::*;
+import math_pkg::*;
 
-    module pixel_traversal (
-        input wire logic                 clk,
-        input wire logic                 rst,
+module pixel_traversal (
+    input  logic            clk,
+    input  logic            rst,
 
-        input wire logic                 in_valid,
-        input  triangle_state_t      in_state,
-        output logic                 in_ready,
+    // From triangle_setup
+    input  triangle_state_t in_state,
+    input  logic            in_valid,
+    output logic            in_ready,
 
-        output logic                 out_valid,
-        output pixel_state_t         out_pixel,
-        input wire logic                 out_ready
-    );
+    // To pixel_eval
+    output pixel_state_t    out_pixel,
+    output logic            out_valid,
+    input  logic            out_ready,
 
-        typedef enum logic [1:0] {IDLE, RUN, WAIT_OUT} state_t;
-        state_t state;
+    // Visibility
+    output logic            busy
+);
+    // ---- FSM ----
+    typedef enum logic [0:0] { IDLE, RUN } state_t;
+    state_t state, next_state;
 
-        triangle_state_t tri_reg;
+    // ---- Triangle & scan registers ----
+    triangle_state_t tri_reg;
 
-        logic [15:0] current_x, current_y;
-        logic [15:0] out_x, out_y;
-        q32_32_t w0, w1, w2;
+    logic [15:0] current_x, current_y;
+    logic [15:0] next_x,    next_y;
 
-        assign in_ready = (state == IDLE);
+    // ---- 1-deep output buffer ----
+    pixel_state_t pixel_reg;
+    logic         pixel_valid;
 
+    // Fire/can-emit helpers
+    logic can_emit;     // allowed to produce a pixel this cycle
+    logic fire_out;     // downstream handshake on buffered pixel
 
-        // Output pixel data
-        assign out_valid = (state == RUN) || (state == WAIT_OUT);
+    assign can_emit = (!pixel_valid) || out_ready;     // buffer empty OR will be freed
+    assign fire_out =  (pixel_valid)  && out_ready;    // buffered pixel consumed
 
-        always_comb begin
-            out_pixel.x          = out_x;
-            out_pixel.y          = out_y;
-            out_pixel.v0_color   = tri_reg.v0_color;
-            out_pixel.v1_color   = tri_reg.v1_color;
-            out_pixel.v2_color   = tri_reg.v2_color;
-            out_pixel.v0_depth   = tri_reg.v0_depth;
-            out_pixel.v1_depth   = tri_reg.v1_depth;
-            out_pixel.v2_depth   = tri_reg.v2_depth;
-            out_pixel.v0         = tri_reg.v0;
-            out_pixel.v1         = tri_reg.v1;
-            out_pixel.v2         = tri_reg.v2;
-        end
+    // Handshake up & status
+    assign out_pixel = pixel_reg;
+    assign out_valid = pixel_valid;
+    assign in_ready  = (state == IDLE);
+    assign busy      = (state != IDLE) || pixel_valid;
 
-        // // Pixel stepping logic
-        always_ff @(posedge clk or posedge rst) begin
+    // ---- Next-state / traversal combinational ----
+    always_comb begin
+        next_state = state;
+        next_x     = current_x;
+        next_y     = current_y;
 
-            if (rst) begin
-                state <= IDLE;
-            end else if (state == IDLE && in_valid) begin
-                state <= RUN;
-                tri_reg <= in_state;
-                current_x   <= in_state.bbox_min_x;
-                current_y   <= in_state.bbox_min_y;
-            end else if (state == RUN && !out_ready) begin
-                state <= WAIT_OUT;
-            end else if (state == WAIT_OUT && out_ready) begin
-                state <= RUN;
-            end else if (state == RUN && out_ready) begin
-                out_x <= current_x;
-                out_y <= current_y;
-                if (current_x < tri_reg.bbox_max_x) begin
-                    current_x <= current_x + 1;
-                end else begin
-                    current_x <= tri_reg.bbox_min_x;
-                    if (current_y < tri_reg.bbox_max_y) begin
-                        current_y <= current_y + 1;
+        unique case (state)
+            IDLE: begin
+                if (in_valid && in_ready) begin
+                    next_state = RUN;
+                    next_x     = in_state.bbox_min_x;
+                    next_y     = in_state.bbox_min_y;
+                end
+            end
+
+            RUN: begin
+                // Only advance when we actually emit a pixel
+                if (can_emit) begin
+                    if (current_x < tri_reg.bbox_max_x) begin
+                        next_x = current_x + 16'd1;
                     end else begin
-                        state <= IDLE;
+                        next_x = tri_reg.bbox_min_x;
+                        if (current_y < tri_reg.bbox_max_y) begin
+                            next_y = current_y + 16'd1;
+                        end else begin
+                            // Finished last pixel at (bbox_max_x, bbox_max_y)
+                            next_state = IDLE;
+                        end
                     end
                 end
             end
-            
+        endcase
+    end
+
+    // ---- Sequential ----
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state       <= IDLE;
+            tri_reg     <= '0;
+            current_x   <= '0;
+            current_y   <= '0;
+            pixel_reg   <= '0;
+            pixel_valid <= 1'b0;
+        end else begin
+            // FSM & counters
+            state     <= next_state;
+            current_x <= next_x;
+            current_y <= next_y;
+
+            // Latch new triangle when accepted
+            if (in_valid && in_ready) begin
+                tri_reg <= in_state;
+            end
+
+            // Output buffer behavior:
+            // 1) If we are running and allowed to emit -> (re)fill the buffer
+            // 2) Else, if downstream just consumed and we didn't refill -> clear valid
+            if (state == RUN && can_emit) begin
+                pixel_reg.x        <= current_x;
+                pixel_reg.y        <= current_y;
+                pixel_reg.v0       <= tri_reg.v0;
+                pixel_reg.v1       <= tri_reg.v1;
+                pixel_reg.v2       <= tri_reg.v2;
+                pixel_reg.v0_color <= tri_reg.v0_color;
+                pixel_reg.v1_color <= tri_reg.v1_color;
+                pixel_reg.v2_color <= tri_reg.v2_color;
+                pixel_reg.v0_depth <= tri_reg.v0_depth;
+                pixel_reg.v1_depth <= tri_reg.v1_depth;
+                pixel_reg.v2_depth <= tri_reg.v2_depth;
+                pixel_valid        <= 1'b1;   // buffer is (re)filled
+            end else if (fire_out) begin
+                pixel_valid <= 1'b0;          // drained and not refilled this cycle
+            end
         end
-    endmodule
+    end
+endmodule

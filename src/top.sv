@@ -61,7 +61,11 @@ module top (
     q16_16_t renderer_depth;
     logic        renderer_we;
     logic [11:0] renderer_color;
+    logic renderer_ready;
     logic renderer_busy;
+
+    logic begin_frame;
+    assign begin_frame = frame && !renderer_busy;
 
     localparam FB_WIDTH  = 160;
     localparam FB_HEIGHT = 120;
@@ -72,7 +76,7 @@ module top (
     ) framebuffer_inst (
         .clk_write(clk_100m), // Renderer clock
         .clk_read(clk_pix),   // VGA clock
-        .swap(frame), // && !renderer_busy), // swap at start of frame if not busy
+        .swap(begin_frame),
         .rst(!btn_rst_n),
 
         .write_enable(renderer_we),
@@ -86,26 +90,55 @@ module top (
     );
 
 
-    point3d_t TRI0;
-    always_ff @(posedge clk_100m) begin
-        if (!btn_rst_n) begin
-            TRI0 <= '{to_q16_16(25), to_q16_16(15), to_q16_16(30)};
-        end else if(frame) begin
-            if (TRI0.x > to_q16_16(160))
-                TRI0.x <= to_q16_16(0);
-            else
-                TRI0.x <= TRI0.x + to_q16_16(1);
-        end
-    end
-
-    localparam point3d_t TRI1 = '{to_q16_16(50),  to_q16_16( 90), to_q16_16( 50)};
-    localparam point3d_t TRI2 = '{to_q16_16(100), to_q16_16( 30), to_q16_16( 75)};
-    localparam point3d_t TRI3 = '{to_q16_16(140), to_q16_16(100), to_q16_16(125)};
-
     localparam color12_t C0 = '{r:4'hF, g:4'h8, b:4'h0};
     localparam color12_t C1 = '{r:4'h8, g:4'h0, b:4'h5};
     localparam color12_t C2 = '{r:4'h0, g:4'h8, b:4'h8};
     localparam color12_t C3 = '{r:4'hF, g:4'hF, b:4'h0};
+
+    triangle_t tris [0:3];
+    always_ff @(posedge clk_100m) begin
+        // if (!btn_rst_n) begin
+            tris[0] <= '{'{pos: '{to_q16_16(25),  to_q16_16(40), to_q16_16(30)},  color: C0},
+                        '{pos: '{to_q16_16(50),  to_q16_16(90), to_q16_16(50)},  color: C1},
+                        '{pos: '{to_q16_16(100), to_q16_16(30), to_q16_16(75)},  color: C2}};
+            tris[1] <= '{'{pos: '{to_q16_16(60),  to_q16_16(20), to_q16_16(20)},  color: C1},
+                        '{pos: '{to_q16_16(120), to_q16_16(80), to_q16_16(60)},  color: C2},
+                        '{pos: '{to_q16_16(140), to_q16_16(10), to_q16_16(90)},  color: C3}};
+            tris[2] <= '{'{pos: '{to_q16_16(10),  to_q16_16(100), to_q16_16(10)},  color: C2},
+                        '{pos: '{to_q16_16(30),  to_q16_16(140), to_q16_16(30)},  color: C3},
+                        '{pos: '{to_q16_16(80),  to_q16_16(120), to_q16_16(50)},  color: C0}};
+            tris[3] <= '{'{pos: '{to_q16_16(90),  to_q16_16(60), to_q16_16(40)},  color: C3},
+                        '{pos: '{to_q16_16(130), to_q16_16(90), to_q16_16(70)},  color: C0},
+                        '{pos: '{to_q16_16(150), to_q16_16(130), to_q16_16(100)}, color: C1}};
+        // end
+    end
+
+    // Drive triangles into rasterizer one by one
+    logic [1:0] tri_index;
+    logic      renderer_valid;
+    always_ff @(posedge clk_100m) begin
+        if (!btn_rst_n) begin
+            tri_index <= 0;
+            renderer_valid <= 0;
+        end else if (begin_frame) begin
+            tri_index <= 0; // start over at new frame
+            renderer_valid <= 1;
+            $display("New frame at time %0t", $time);
+        end else if (renderer_ready) begin
+            if (tri_index == 3)
+                renderer_valid <= 0; // all done for this frame
+            else begin
+                $display("Starting rasterization of triangle %0d at time %0t", tri_index, $time);
+                tri_index <= tri_index + 1;
+                renderer_valid <= 1;
+            end
+
+        end
+        else begin
+            renderer_valid <= 0; // all done for this frame
+        end
+
+    end
 
     rasterizer #(
         .WIDTH(FB_WIDTH),
@@ -114,18 +147,20 @@ module top (
         .clk(clk_100m),
         .rst(!btn_rst_n),
 
-        .in_valid(frame),
-        .in_ready(renderer_busy),
+        .in_valid(renderer_valid),
+        .in_ready(renderer_ready),
+        .busy(renderer_busy),
 
-        .v0('{pos: TRI0, color: C0}),
-        .v1('{pos: TRI1, color: C1}),
-        .v2('{pos: TRI2, color: C2}),
+        .v0(tris[tri_index].v0),
+        .v1(tris[tri_index].v1),
+        .v2(tris[tri_index].v2),
 
         .out_pixel_x(renderer_x),
         .out_pixel_y(renderer_y),
         .out_depth(renderer_depth),
         .out_color(renderer_color),
-        .out_valid(renderer_we)
+        .out_valid(renderer_we),
+        .out_ready(1'b1) // Always ready
     );
 
     always_ff @(posedge clk_pix) begin

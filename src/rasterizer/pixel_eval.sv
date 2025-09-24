@@ -22,32 +22,68 @@ module pixel_eval #(
     output logic [15:0]      out_y,
     output color12_t                  out_color,
     output q16_16_t                   out_depth,
-    output logic                      out_valid
+    output logic                      out_valid,
+    input  wire logic                 out_ready,
+    output logic                      busy
 );
 
-    assign in_ready = 1'b1; // Always ready
+    // Pipeline control signals
+    logic stage1_ready, stage2_ready;
+    logic stage1_valid, stage2_valid;
+    assign busy = stage1_valid || stage2_valid || out_valid;
 
-    q16_16_t v0x, v0y, v1x, v1y, v2x, v2y;
-
-    assign v0x = in_pixel.v1.x - in_pixel.v0.x;
-    assign v0y = in_pixel.v1.y - in_pixel.v0.y;
-    assign v1x = in_pixel.v2.x - in_pixel.v0.x;
-    assign v1y = in_pixel.v2.y - in_pixel.v0.y;
-    assign v2x = to_q16_16(in_pixel.x) - in_pixel.v0.x;
-    assign v2y = to_q16_16(in_pixel.y) - in_pixel.v0.y;
+    // Ready logic: can accept new data if stage1 is ready
+    assign in_ready = stage1_ready;
+    assign stage1_ready = !stage1_valid || stage2_ready;
+    assign stage2_ready = !stage2_valid || out_ready;
 
     
-    q32_32_t d00, d01, d11, d20, d21;
+    // Stage 1 registers
+    pixel_state_t stage1_pixel;
+    logic signed [79:0] stage1_denom, stage1_v_num, stage1_w_num, stage1_u_num;
     
-    assign d00 = dot2d('{v0x, v0y}, '{v0x, v0y});
-    assign d01 = dot2d('{v0x, v0y}, '{v1x, v1y});
-    assign d11 = dot2d('{v1x, v1y}, '{v1x, v1y});
-    assign d20 = dot2d('{v2x, v2y}, '{v0x, v0y});
-    assign d21 = dot2d('{v2x, v2y}, '{v1x, v1y});
+    // Stage 2 registers  
+    pixel_state_t stage2_pixel;
+    logic signed [79:0] stage2_denom, stage2_v_num, stage2_w_num, stage2_u_num;
+    logic stage2_inside;
 
 
-    q64_64_t denom, v_num, w_num, u_num;
-    q64_64_t denom_comb, v_num_comb, w_num_comb, u_num_comb;
+    logic signed [19:0] clamped_x, clamped_y; // Q16.4
+    logic signed [19:0] clamped_v0x, clamped_v0y;
+    logic signed [19:0] clamped_v1x, clamped_v1y;
+    logic signed [19:0] clamped_v2x, clamped_v2y;
+
+    //Take top 16 bits of vertex coordinates (Q16.16 -> Q16.4)
+    assign clamped_x   = {in_pixel.x, 4'b0};
+    assign clamped_y   = {in_pixel.y, 4'b0};
+    assign clamped_v0x = in_pixel.v0.x[31:12];
+    assign clamped_v0y = in_pixel.v0.y[31:12];
+    assign clamped_v1x = in_pixel.v1.x[31:12];
+    assign clamped_v1y = in_pixel.v1.y[31:12];
+    assign clamped_v2x = in_pixel.v2.x[31:12];
+    assign clamped_v2y = in_pixel.v2.y[31:12];
+
+    logic signed [19:0] v0x, v0y, v1x, v1y, v2x, v2y; // Q16.4
+
+    assign v0x = clamped_v1x - clamped_v0x;
+    assign v0y = clamped_v1y - clamped_v0y;
+    assign v1x = clamped_v2x - clamped_v0x;
+    assign v1y = clamped_v2y - clamped_v0y;
+    assign v2x = clamped_x   - clamped_v0x;
+    assign v2y = clamped_y   - clamped_v0y;
+
+    
+    logic signed [39:0] d00, d01, d11, d20, d21; // Q32.8
+    
+    assign d00 = v0x * v0x + v0y * v0y;
+    assign d01 = v0x * v1x + v0y * v1y;
+    assign d11 = v1x * v1x + v1y * v1y;
+    assign d20 = v2x * v0x + v2y * v0y;
+    assign d21 = v2x * v1x + v2y * v1y;
+
+
+    logic signed [79:0] denom, v_num, w_num, u_num; // Q64.16
+    logic signed [79:0] denom_comb, v_num_comb, w_num_comb, u_num_comb; // Q64.16
     always_comb begin
         denom_comb = d00 * d11 - d01 * d01;
         v_num_comb = d11 * d20 - d01 * d21;
@@ -55,52 +91,114 @@ module pixel_eval #(
         u_num_comb = denom_comb - v_num_comb - w_num_comb;
     end
     
-    logic valid_reg;
-    pixel_state_t pixel_reg;
-
-    q16_16_t u, v, w;
+        // Inside test logic (combinational for stage 1)
+    logic inside_comb;
     always_comb begin
-        if (denom != 0) begin
-            v = (v_num <<< 16) / denom;
-            w = (w_num <<< 16) / denom;
-            u = (u_num <<< 16) / denom;
-        end
-        else begin
-            u = 0; v = 0; w = 0;
+        if (stage1_denom != 0) begin
+            // Check if all barycentric coordinates are positive
+            inside_comb = ((stage1_denom > 0 && stage1_v_num >= 0 && stage1_w_num >= 0 && stage1_u_num >= 0) || 
+                          (stage1_denom < 0 && stage1_v_num <= 0 && stage1_w_num <= 0 && stage1_u_num <= 0));
+        end else begin
+            inside_comb = 1'b0;
         end
     end
 
-    logic is_inside;
-    assign is_inside = (u >= 0) && (v >= 0) && (w >= 0);
+    // Pipeline stage 1: Register inputs and intermediate calculations
     always_ff @(posedge clk or posedge rst) begin
-            if (rst) begin
-            out_valid <= 0;
-            valid_reg <= 0;
-            end
-            else begin
-                // Pipeline stage 1
-                denom <= denom_comb;
-                v_num <= v_num_comb;
-                w_num <= w_num_comb;
-                u_num <= u_num_comb;
-                valid_reg <= in_valid;
-                pixel_reg <= in_pixel;
-
-                // Pipeline stage 2
-                out_x <= pixel_reg.x;
-                out_y <= pixel_reg.y;
-                if (is_inside) begin
-                    // Color channels are 4-bit, so u/v/w in Q16.16 -> shift down
-                    out_color[11:8] <= (u * pixel_reg.v0_color[11:8] + v * pixel_reg.v1_color[11:8] + w * pixel_reg.v2_color[11:8]) >>> 16;
-                    out_color[7:4]  <= (u * pixel_reg.v0_color[7:4]  + v * pixel_reg.v1_color[7:4]  + w * pixel_reg.v2_color[7:4])  >>> 16;
-                    out_color[3:0]  <= (u * pixel_reg.v0_color[3:0]  + v * pixel_reg.v1_color[3:0]  + w * pixel_reg.v2_color[3:0])  >>> 16;
-                    out_depth <= (u * pixel_reg.v0_depth + v * pixel_reg.v1_depth + w * pixel_reg.v2_depth) >>> 16;
-                    out_valid <= valid_reg;
-                end else begin
-                    out_color <= 12'b0;
-                    out_depth <= 32'b0;
-                    out_valid <= 0;
+        if (rst) begin
+            stage1_valid <= 1'b0;
+            stage1_denom <= 0;
+            stage1_v_num <= 0;
+            stage1_w_num <= 0;
+            stage1_u_num <= 0;
+            stage1_pixel <= '0;
+        end else begin
+            if (stage1_ready) begin
+                stage1_valid <= in_valid;
+                if (in_valid) begin
+                    stage1_denom <= denom_comb;
+                    stage1_v_num <= v_num_comb;
+                    stage1_w_num <= w_num_comb;
+                    stage1_u_num <= u_num_comb;
+                    stage1_pixel <= in_pixel;
                 end
             end
+        end
+    end
+
+    // Barycentric coordinate calculation (combinational for stage 2)
+    q16_16_t u_comb, v_comb, w_comb;
+    always_comb begin
+        if (stage2_denom != 0) begin
+            v_comb = (stage2_v_num <<< 16) / stage2_denom;
+            w_comb = (stage2_w_num <<< 16) / stage2_denom;
+            u_comb = 32'h00010000 - v_comb - w_comb; // 1.0 in Q16.16
+        end else begin
+            u_comb = 0; 
+            v_comb = 0; 
+            w_comb = 0;
+        end
+    end
+
+    // Pipeline stage 2: Final calculation and output
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            stage2_valid <= 1'b0;
+            out_valid <= 1'b0;
+            out_x <= 0;
+            out_y <= 0;
+            out_color <= '0;
+            out_depth <= '0;
+            stage2_pixel <= '0;
+            stage2_denom <= 0;
+            stage2_v_num <= 0;
+            stage2_w_num <= 0;
+            stage2_u_num <= 0;
+            stage2_inside <= 1'b0;
+        end else begin
+            if (stage2_ready) begin
+                // Move data from stage 1 to stage 2
+                stage2_valid <= stage1_valid;
+                if (stage1_valid) begin
+                    stage2_pixel <= stage1_pixel;
+                    stage2_denom <= stage1_denom;
+                    stage2_v_num <= stage1_v_num;
+                    stage2_w_num <= stage1_w_num;
+                    stage2_u_num <= stage1_u_num;
+                    stage2_inside <= inside_comb;
+                end
+                
+                // Stage 2 output
+                out_valid <= stage2_valid && stage2_inside;
+                if (stage2_valid && stage2_inside) begin
+                    out_x <= stage2_pixel.x;
+                    out_y <= stage2_pixel.y;
+                    
+                    // Color interpolation (each channel is 4 bits)
+                    out_color[11:8] <= (u_comb * stage2_pixel.v0_color[11:8] + 
+                                       v_comb * stage2_pixel.v1_color[11:8] + 
+                                       w_comb * stage2_pixel.v2_color[11:8]) >>> 16;
+                    out_color[7:4]  <= (u_comb * stage2_pixel.v0_color[7:4] + 
+                                       v_comb * stage2_pixel.v1_color[7:4] + 
+                                       w_comb * stage2_pixel.v2_color[7:4]) >>> 16;
+                    out_color[3:0]  <= (u_comb * stage2_pixel.v0_color[3:0] + 
+                                       v_comb * stage2_pixel.v1_color[3:0] + 
+                                       w_comb * stage2_pixel.v2_color[3:0]) >>> 16;
+                    
+                    // Depth interpolation
+                    out_depth <= (u_comb * stage2_pixel.v0_depth + 
+                                 v_comb * stage2_pixel.v1_depth + 
+                                 w_comb * stage2_pixel.v2_depth) >>> 16;
+                end else begin
+                    out_x <= stage2_pixel.x;
+                    out_y <= stage2_pixel.y;
+                    out_color <= 12'b0;
+                    out_depth <= 32'b0;
+                end
+            end else if (out_ready && out_valid) begin
+                // Output was consumed, but no new data to replace it
+                out_valid <= 1'b0;
+            end
+        end
     end
 endmodule

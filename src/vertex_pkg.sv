@@ -10,4 +10,10 @@ package vertex_pkg;
         color12_t color;
     } vertex_t;
 
+    typedef struct packed {
+        vertex_t v0;
+        vertex_t v1;
+        vertex_t v2;
+    } triangle_t;
+
 endpackage

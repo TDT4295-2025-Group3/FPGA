@@ -21,13 +21,16 @@ module triangle_setup #(
     output logic    in_ready,
 
     output triangle_state_t out_state,
-    output logic            out_valid
+    output logic            out_valid,
+    input wire logic          out_ready,
+    output logic            busy
 );
+    assign in_ready = !out_valid || out_ready;
+    assign busy = out_valid;
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             out_state <= '0;
             out_valid <= 1'b0;
-            in_ready  <= 1'b1;
         end else begin
             if (in_valid && in_ready) begin
                 // Store vertex positions
@@ -50,10 +53,8 @@ module triangle_setup #(
                 out_state.v2_depth <= v2.pos.z;
 
                 out_valid <= 1'b1;
-                in_ready  <= 1'b0;
-            end else if (out_valid && !in_valid) begin
+            end else if (out_valid && out_ready) begin
                 out_valid <= 1'b0;
-                in_ready  <= 1'b1;
             end
         end
     end

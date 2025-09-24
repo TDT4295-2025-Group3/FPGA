@@ -1,6 +1,7 @@
 #include <verilated.h>
 #include <SDL2/SDL.h>
 #include "Vtop_sim.h"
+#include <time.h>
 
 const int WIDTH = 640;
 const int HEIGHT = 480;
@@ -30,6 +31,12 @@ void waitForSpacePressAndRelease()
 
         SDL_Delay(10); // small delay to avoid busy loop
     }
+}
+
+int _time = 0;
+double sc_time_stamp()
+{
+    return _time;
 }
 
 int main(int argc, char **argv)
@@ -76,6 +83,7 @@ int main(int argc, char **argv)
             // Toggle 100 MHz clock
             top->clk_100m = !top->clk_100m;
             top->eval();
+            _time++;
 
             // Wait until space is pressed before proceeding
             // if (top->clk_100m)
@@ -114,6 +122,14 @@ int main(int argc, char **argv)
                 x++;
             }
             prev_clk_pix = top->clk_pix;
+            while (SDL_PollEvent(&e))
+            {
+                if (e.type == SDL_QUIT)
+                {
+                    running = false;
+                    frame_done = true;
+                }
+            }
         }
 
         // --- Rendering ---
@@ -147,12 +163,6 @@ int main(int argc, char **argv)
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, NULL, &dest);
         SDL_RenderPresent(renderer);
-
-        while (SDL_PollEvent(&e))
-        {
-            if (e.type == SDL_QUIT)
-                running = false;
-        }
     }
 
     delete[] pixels;
