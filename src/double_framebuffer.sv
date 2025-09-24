@@ -36,7 +36,7 @@ module double_framebuffer #(
     typedef enum logic {FB_A, FB_B} fb_select_t;
     fb_select_t fb_write_select, fb_read_select;
 
-    always_ff @(posedge clk_read or posedge rst) begin
+    always_ff @(posedge clk_write or posedge rst) begin
         if (rst) begin
             fb_read_select  <= FB_A;
             fb_write_select <= FB_B;

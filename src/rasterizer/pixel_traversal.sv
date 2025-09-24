@@ -5,18 +5,18 @@ import rasterizer_pkg::*;
 import math_pkg::*;
 
 module pixel_traversal (
-    input  logic            clk,
-    input  logic            rst,
+    input wire logic            clk,
+    input wire logic            rst,
 
     // From triangle_setup
-    input  triangle_state_t in_state,
-    input  logic            in_valid,
+    input  wire triangle_state_t in_state,
+    input  wire logic            in_valid,
     output logic            in_ready,
 
     // To pixel_eval
     output pixel_state_t    out_pixel,
     output logic            out_valid,
-    input  logic            out_ready,
+    input  wire logic            out_ready,
 
     // Visibility
     output logic            busy

@@ -98,6 +98,7 @@ if {[file exists ../constraints/arty.xdc]} {
 # ---------------------------------------------------
 # Set top module
 set_property top $top_name [current_fileset]
+set_property top tb_top [get_filesets sim_1]
 
 # ---------------------------------------------------
 # Run Synthesis

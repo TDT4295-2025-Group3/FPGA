@@ -14,9 +14,6 @@ module top (
     import math_pkg::*;
     import color_pkg::*;
 
-    // ------------------------------------------------------------------------
-    // Pixel clock and display timing
-    // ------------------------------------------------------------------------
     logic clk_pix;
     logic clk_pix_locked;
     clock_480p clock_pix_inst (
@@ -48,10 +45,15 @@ module top (
         .sy
     );
 
-    // ------------------------------------------------------------------------
-    // Framebuffer (160x120)
-    // ------------------------------------------------------------------------
-    // Divide by 4 instead of 2 (>>2) so 640x480 → 160x120 mapping
+    logic frame_pix_sync1, frame_pix_sync2, frame_pix_sync2_d;
+    always_ff @(posedge clk_100m) begin
+        frame_pix_sync1   <= frame;
+        frame_pix_sync2   <= frame_pix_sync1;
+        frame_pix_sync2_d <= frame_pix_sync2;
+    end
+    wire frame_start_100m = frame_pix_sync2 & ~frame_pix_sync2_d;
+
+
     logic [7:0]  fb_read_x = sx[9:2];
     logic [6:0]  fb_read_y = sy[8:2];
     logic [11:0] fb_read_data;
@@ -61,11 +63,16 @@ module top (
     q16_16_t renderer_depth;
     logic        renderer_we;
     logic [11:0] renderer_color;
-    logic renderer_ready;
-    logic renderer_busy;
+    logic        renderer_ready;
+    logic        renderer_busy;
 
     logic begin_frame;
-    assign begin_frame = frame && !renderer_busy;
+    always_ff @(posedge clk_100m) begin
+        if (!btn_rst_n)
+            begin_frame <= 1'b0;
+        else
+            begin_frame <= frame_start_100m && !renderer_busy;
+    end
 
     localparam FB_WIDTH  = 160;
     localparam FB_HEIGHT = 120;
@@ -89,55 +96,54 @@ module top (
         .read_data(fb_read_data)
     );
 
-
-    localparam color12_t C0 = '{r:4'hF, g:4'h8, b:4'h0};
-    localparam color12_t C1 = '{r:4'h8, g:4'h0, b:4'h5};
-    localparam color12_t C2 = '{r:4'h0, g:4'h8, b:4'h8};
-    localparam color12_t C3 = '{r:4'hF, g:4'hF, b:4'h0};
+    localparam color12_t C0 = '{r:4'hF, g:4'h8, b:4'h0}; // orange
+    localparam color12_t C1 = '{r:4'h8, g:4'h0, b:4'h5}; // purple
+    localparam color12_t C2 = '{r:4'h0, g:4'h8, b:4'h8}; // teal
+    localparam color12_t C3 = '{r:4'hF, g:4'hF, b:4'h0}; // yellow
 
     triangle_t tris [0:3];
     always_ff @(posedge clk_100m) begin
-        // if (!btn_rst_n) begin
-            tris[0] <= '{'{pos: '{to_q16_16(25),  to_q16_16(40), to_q16_16(30)},  color: C0},
-                        '{pos: '{to_q16_16(50),  to_q16_16(90), to_q16_16(50)},  color: C1},
-                        '{pos: '{to_q16_16(100), to_q16_16(30), to_q16_16(75)},  color: C2}};
-            tris[1] <= '{'{pos: '{to_q16_16(60),  to_q16_16(20), to_q16_16(20)},  color: C1},
-                        '{pos: '{to_q16_16(120), to_q16_16(80), to_q16_16(60)},  color: C2},
-                        '{pos: '{to_q16_16(140), to_q16_16(10), to_q16_16(90)},  color: C3}};
-            tris[2] <= '{'{pos: '{to_q16_16(10),  to_q16_16(100), to_q16_16(10)},  color: C2},
-                        '{pos: '{to_q16_16(30),  to_q16_16(140), to_q16_16(30)},  color: C3},
-                        '{pos: '{to_q16_16(80),  to_q16_16(120), to_q16_16(50)},  color: C0}};
-            tris[3] <= '{'{pos: '{to_q16_16(90),  to_q16_16(60), to_q16_16(40)},  color: C3},
-                        '{pos: '{to_q16_16(130), to_q16_16(90), to_q16_16(70)},  color: C0},
-                        '{pos: '{to_q16_16(150), to_q16_16(130), to_q16_16(100)}, color: C1}};
-        // end
+        tris[0] <= '{'{pos: '{to_q16_16(25),  to_q16_16(40), to_q16_16(30)},  color: C0},
+                    '{pos: '{to_q16_16(50),  to_q16_16(90), to_q16_16(50)},  color: C1},
+                    '{pos: '{to_q16_16(100), to_q16_16(30), to_q16_16(75)},  color: C2}};
+        tris[1] <= '{'{pos: '{to_q16_16(60),  to_q16_16(20), to_q16_16(20)},  color: C1},
+                    '{pos: '{to_q16_16(120), to_q16_16(80), to_q16_16(60)},  color: C2},
+                    '{pos: '{to_q16_16(140), to_q16_16(10), to_q16_16(90)},  color: C3}};
+        tris[2] <= '{'{pos: '{to_q16_16(10),  to_q16_16(100), to_q16_16(10)},  color: C2},
+                    '{pos: '{to_q16_16(30),  to_q16_16(140), to_q16_16(30)},  color: C3},
+                    '{pos: '{to_q16_16(80),  to_q16_16(120), to_q16_16(50)},  color: C0}};
+        tris[3] <= '{'{pos: '{to_q16_16(90),  to_q16_16(60), to_q16_16(40)},  color: C3},
+                    '{pos: '{to_q16_16(130), to_q16_16(90), to_q16_16(70)},  color: C0},
+                    '{pos: '{to_q16_16(150), to_q16_16(130), to_q16_16(100)}, color: C1}};
     end
 
-    // Drive triangles into rasterizer one by one
+
     logic [1:0] tri_index;
-    logic      renderer_valid;
+    logic       renderer_valid;
+    logic       sending;
+
     always_ff @(posedge clk_100m) begin
         if (!btn_rst_n) begin
-            tri_index <= 0;
-            renderer_valid <= 0;
+            tri_index      <= '0;
+            renderer_valid <= 1'b0;
+            sending        <= 1'b0;
         end else if (begin_frame) begin
-            tri_index <= 0; // start over at new frame
-            renderer_valid <= 1;
+            tri_index      <= 2'd0;
+            renderer_valid <= 1'b1;
+            sending        <= 1'b1;
             $display("New frame at time %0t", $time);
-        end else if (renderer_ready) begin
-            if (tri_index == 3)
-                renderer_valid <= 0; // all done for this frame
-            else begin
+        end else if (sending) begin
+            if (renderer_valid && renderer_ready) begin
                 $display("Starting rasterization of triangle %0d at time %0t", tri_index, $time);
-                tri_index <= tri_index + 1;
-                renderer_valid <= 1;
+                if (tri_index == 2'd3) begin
+                    renderer_valid <= 1'b0;
+                    sending        <= 1'b0;
+                end else begin
+                    tri_index      <= tri_index + 2'd1;
+                    renderer_valid <= 1'b1;
+                end
             end
-
         end
-        else begin
-            renderer_valid <= 0; // all done for this frame
-        end
-
     end
 
     rasterizer #(

@@ -2,6 +2,14 @@
 
 This project uses Xilinx Vivado to build FPGA designs in batch mode.
 
+## Initializing the Vivado Project
+
+To build the project, run the following command in your terminal:
+
+```sh
+vivado -mode batch -source create_project.tcl -log build/vivado.log -journal build/vivado.jou
+```
+
 ## Building the Project
 
 To build the project, run the following command in your terminal:
@@ -19,10 +27,13 @@ vivado -mode batch -source flash.tcl -log build/vivado.log -journal build/vivado
 ## VGA simulator
 
 You need the following tools to use the simulator:
+
 ```sh
 sudo apt install verilator libsdl2-dev
 ```
+
 To run it:
+
 ```sh
 cd sim
 make clean // Optional
