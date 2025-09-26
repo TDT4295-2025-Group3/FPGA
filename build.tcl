@@ -53,6 +53,18 @@ if {[file exists $filelist_path]} {
 # Read Xilinx XPM library
 read_verilog -library xpm $::env(XILINX_VIVADO)/data/ip/xpm/xpm_memory/hdl/xpm_memory.sv
 
+# ---------------------------------------------------
+# Add generated IPs
+if {[file exists ../src/rasterizer/div_rasterizer/div_rasterizer.xci]} {
+    puts "Adding IP: div_rasterizer"
+    read_ip ../src/rasterizer/div_rasterizer/div_rasterizer.xci
+    upgrade_ip [get_ips div_rasterizer]
+    generate_target {synthesis implementation simulation} [get_ips div_rasterizer]
+} else {
+    puts "WARNING: div_rasterizer.xci not found!"
+}
+
+
 # Read constraint file (if exists)
 if {[file exists ../constraints/arty.xdc]} {
     puts "Reading constraints: ../constraints/arty.xdc"

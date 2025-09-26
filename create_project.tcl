@@ -85,6 +85,17 @@ if {[llength $tb_sv_files] > 0} {
     add_files -fileset sim_1 $tb_sv_files
 }
 
+# ---------------------------------------------------
+# Add generated IPs
+if {[file exists ../src/rasterizer/div_rasterizer/div_rasterizer.xci]} {
+    puts "Adding IP: div_rasterizer"
+    read_ip ../src/rasterizer/div_rasterizer/div_rasterizer.xci
+    upgrade_ip [get_ips div_rasterizer]
+    generate_target {synthesis implementation simulation} [get_ips div_rasterizer]
+} else {
+    puts "WARNING: div_rasterizer.xci not found!"
+}
+
 
 # ---------------------------------------------------
 # Constraints
