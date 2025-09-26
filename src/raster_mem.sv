@@ -2,15 +2,16 @@
 module raster_mem #(
     localparam MAX_VERT  = 5000,
     localparam MAX_TRI   = 5000,
-    localparam MAX_INST  = 256,        // Also used max vert and tri buffers
-//    localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
-//    localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
+    localparam MAX_INST  = 256,      // Also used max vert and tri buffers
+    localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
+    localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
     
-    localparam MAX_VERT_CNT = 256,                    // max vertices per buffer
-    localparam MAX_TRI_CNT = 256,                     // max triangles per buffer
-    localparam VTX_W     = 108,                       // 3*32 + 3*4 bits (spec)
-    localparam VIDX_W = $clog2(MAX_VERT_CNT),
-    localparam TRI_W     = 3*VIDX_W,               // 3*8 bits. Might want to increase for safety 3*12 bits
+    localparam MAX_VERT_CNT = 256,             // max vertices per buffer
+    localparam MAX_TRI_CNT = 256,              // max triangles per buffer
+    localparam VTX_W     = 108,                // 3*32 + 3*4 bits (spec)
+    localparam VIDX_W = $clog2(MAX_VERT_CNT), 
+    localparam TIDX_W = $clog2(MAX_TRI_CNT),   
+    localparam TRI_W     = 3*VIDX_W,           // 3*8 bits. Might want to increase for safety 3*12 bits
     localparam DATA_W    = 32,
     localparam TRANS_W   = DATA_W * 9   // 9 floats
 )(
@@ -25,29 +26,29 @@ module raster_mem #(
     input  logic [11:0] num_verts,
     input  logic [11:0] num_tris,
 
-    input  logic        vert_valid,                      // Opcode: Create vert chosen
-    input  logic        next_vert_valid,                 // next vertex ready for buffer
+    input  logic  vert_valid,             // Opcode: Create vert chosen
+    input  logic  next_vert_valid,        // next vertex ready for buffer
     input  logic [VTX_W-1:0] vert_in,
     input  logic [$clog2(MAX_VERT)-1:0]   vert_base,
-    input  logic [$clog2(MAX_VERT_CNT):0] vert_count,
+    input  logic [VIDX_W-1:0]             vert_count,
 
-    input  logic        tri_valid,
-    input  logic        next_tri_valid,
+    input  logic  tri_valid,
+    input  logic  next_tri_valid,
     input  logic [TRI_W-1:0] tri_in,
     input  logic [$clog2(MAX_TRI)-1:0]    tri_base,
-    input  logic [$clog2(MAX_TRI_CNT):0]  tri_count,
+    input  logic [TIDX_W-1:0]             tri_count,
 
     // Create/Update instance
-    input  logic        inst_valid,
-    input  logic [7:0]  vert_id_in,
-    input  logic [7:0]  tri_id_in,
+    input  logic  inst_valid,
+    input  logic [VIDX_W-1:0]  vert_id_in,
+    input  logic [TIDX_W-1:0]  tri_id_in,
     input  logic [TRANS_W-1:0] transform_in,
     input  logic [7:0]  inst_id_in,
 
     // FPGA → MCU
     output logic [3:0]  status,
-    output logic [7:0]  vert_id_out,
-    output logic [7:0]  tri_id_out,
+    output logic [VIDX_W-1:0]  vert_id_out,
+    output logic [TIDX_W-1:0]  tri_id_out,
     output logic [7:0]  inst_id_out,
     
     // Memory → Transform
@@ -65,36 +66,38 @@ module raster_mem #(
 
     // ---- Memories ----
     logic [VTX_W-1:0] vertex_ram [MAX_VERT-1:0];
-    logic [VIDX_W-1:0] tri_ram   [MAX_TRI-1:0][2:0];
+    logic [2:0][VIDX_W-1:0] tri_ram   [MAX_TRI-1:0];
 
     typedef struct packed {
         logic [DATA_W-1:0] posx,posy,posz;
         logic [DATA_W-1:0] rotx,roty,rotz;
         logic [DATA_W-1:0] scalex,scaley,scalez;
-        logic [$clog2(MAX_INST)-1:0] vert_id, tri_id;
+        logic [$clog2(MAX_VERT_BUF)-1:0] vert_id;
+        logic [$clog2(MAX_VERT_BUF)-1:0] tri_id;
     } transform_t;
     
     typedef struct packed {
-        logic [$clog2(MAX_VERT)-1:0]     base;
-        logic [$clog2(MAX_VERT_CNT)-1:0] count;
+        logic [$clog2(MAX_VERT)-1:0]  base;
+        logic [VIDX_W-1:0]            count;
     } vert_desc_t;
     
     typedef struct packed {
-        logic [$clog2(MAX_TRI)-1:0]      base;
-        logic [$clog2(MAX_TRI_CNT)-1:0]  count;
+        logic [$clog2(MAX_TRI)-1:0]   base;
+        logic [TIDX_W-1:0]            count;
     } tri_desc_t;
     
-    vert_desc_t vert_table [MAX_INST];  // ID range 0-255
-    tri_desc_t  tri_table  [MAX_INST];
-    transform_t inst_ram   [MAX_INST];
+    vert_desc_t vert_table [MAX_INST];      // Descriptor table for each instance ID
+    tri_desc_t  tri_table  [MAX_VERT_BUF];  // Descriptor tables 
+    transform_t inst_ram   [MAX_TRI_BUF];   // used for each model  
     
+    // FSM resources (current vertex/triagnle and counters)
     logic [$clog2(MAX_VERT)-1:0] curr_vert_base;
-    logic [$clog2(MAX_VERT_CNT)-1:0] curr_vert_count;
-    logic [$clog2(MAX_VERT_CNT)-1:0] vert_ctr;
+    logic [VIDX_W-1:0] curr_vert_count;
+    logic [VIDX_W-1:0] vert_ctr;
     
     logic [$clog2(MAX_TRI)-1:0] curr_tri_base;
-    logic [$clog2(MAX_TRI_CNT)-1:0] curr_tri_count;
-    logic [$clog2(MAX_TRI_CNT)-1:0] tri_ctr;
+    logic [TIDX_W-1:0] curr_tri_count;
+    logic [TIDX_W-1:0] tri_ctr;
 
     // ---- FSM ----
     enum logic [2:0] {IDLE, 
@@ -176,7 +179,7 @@ module raster_mem #(
                     end else if (tri_ctr == curr_tri_count) begin
                         status <= 4'b0000; // OK
                         state  <= IDLE;
-                    end else if (tri_ctr == curr_tri_count) begin
+                    end else if (tri_ctr >= curr_tri_count) begin
                         status <= 4'b0010; // Invalid id
                         state  <= IDLE;
                     end
@@ -200,7 +203,7 @@ module raster_mem #(
     end
     
     enum logic [2:0] {RC_IDLE, RC_FETCH_DESC, RC_STREAM_VERT, RC_STREAM_TRI} rc_state; // Rasterdizer controller state
-    tri_t curr_tri; // packed typedef struct for triagnle access
+    logic [2:0][VIDX_W-1:0] curr_tri; 
     
     always_ff @(posedge clk or posedge rst) begin
         if(rst) begin
@@ -257,7 +260,7 @@ module raster_mem #(
                         vert_out <= vertex_ram[curr_vert_base + curr_tri[vert_ctr]];                        
                     end
                 end
-           endcase
+            endcase
         end   
     end
 endmodule
