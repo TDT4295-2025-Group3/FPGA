@@ -108,15 +108,7 @@ module pixel_traversal (
             if (state == RUN && can_emit) begin
                 pixel_reg.x        <= current_x;
                 pixel_reg.y        <= current_y;
-                pixel_reg.v0       <= tri_reg.v0;
-                pixel_reg.v1       <= tri_reg.v1;
-                pixel_reg.v2       <= tri_reg.v2;
-                pixel_reg.v0_color <= tri_reg.v0_color;
-                pixel_reg.v1_color <= tri_reg.v1_color;
-                pixel_reg.v2_color <= tri_reg.v2_color;
-                pixel_reg.v0_depth <= tri_reg.v0_depth;
-                pixel_reg.v1_depth <= tri_reg.v1_depth;
-                pixel_reg.v2_depth <= tri_reg.v2_depth;
+                pixel_reg.triangle <= tri_reg;
                 pixel_valid        <= 1'b1;   // buffer is (re)filled
             end else if (fire_out) begin
                 pixel_valid <= 1'b0;          // drained and not refilled this cycle

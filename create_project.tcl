@@ -1,4 +1,4 @@
-# ===================================================
+# =================================================== 
 # Vivado Project Creation Script
 # ===================================================
 
@@ -96,7 +96,6 @@ if {[file exists ../src/rasterizer/div_rasterizer/div_rasterizer.xci]} {
     puts "WARNING: div_rasterizer.xci not found!"
 }
 
-
 # ---------------------------------------------------
 # Constraints
 if {[file exists ../constraints/arty.xdc]} {
@@ -117,7 +116,8 @@ puts "Starting synthesis..."
 launch_runs synth_1 -jobs 8
 wait_on_run synth_1
 
-# Reports
+# Open synthesized design for reports
+open_run synth_1
 report_timing_summary -file ${proj_name}_timing_synth.rpt -append
 report_utilization    -file ${proj_name}_util_synth.rpt   -append
 
@@ -126,6 +126,11 @@ report_utilization    -file ${proj_name}_util_synth.rpt   -append
 puts "Running implementation..."
 launch_runs impl_1 -to_step write_bitstream -jobs 8
 wait_on_run impl_1
+
+# Open implemented design for reports and bitstream
+open_run impl_1
+report_timing_summary -file ${proj_name}_timing_impl.rpt -append
+report_utilization    -file ${proj_name}_util_impl.rpt   -append
 
 # ---------------------------------------------------
 # Write bitstream
