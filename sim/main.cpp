@@ -1,16 +1,50 @@
 #include <verilated.h>
 #include <SDL2/SDL.h>
 #include "Vtop_sim.h"
+#include <time.h>
 
 const int WIDTH = 640;
 const int HEIGHT = 480;
 const int OFFSET_X = 144;
 const int OFFSET_Y = 34;
 
+void waitForSpacePressAndRelease()
+{
+    bool spacePressed = false;
+    bool spaceReleased = false;
+
+    while (!spaceReleased)
+    {
+        SDL_PumpEvents();
+        const Uint8 *state = SDL_GetKeyboardState(NULL);
+
+        if (state[SDL_SCANCODE_SPACE])
+        {
+            spacePressed = true;
+        }
+
+        // Once space was pressed, wait for it to be released
+        if (spacePressed && !state[SDL_SCANCODE_SPACE])
+        {
+            spaceReleased = true;
+        }
+
+        SDL_Delay(10); // small delay to avoid busy loop
+    }
+}
+
+int _time = 0;
+double sc_time_stamp()
+{
+    return _time;
+}
+
 int main(int argc, char **argv)
 {
     Verilated::commandArgs(argc, argv);
     Vtop_sim *top = new Vtop_sim;
+    top->btn_rst_n = 0;
+    top->eval();
     top->btn_rst_n = 1;
 
     // --- SDL setup ---
@@ -49,6 +83,13 @@ int main(int argc, char **argv)
             // Toggle 100 MHz clock
             top->clk_100m = !top->clk_100m;
             top->eval();
+            _time++;
+
+            // Wait until space is pressed before proceeding
+            // if (top->clk_100m)
+            // {
+            //     waitForSpacePressAndRelease();
+            // }
 
             // Detect rising edge of pixel clock
             if (!prev_clk_pix && top->clk_pix)
@@ -81,6 +122,14 @@ int main(int argc, char **argv)
                 x++;
             }
             prev_clk_pix = top->clk_pix;
+            while (SDL_PollEvent(&e))
+            {
+                if (e.type == SDL_QUIT)
+                {
+                    running = false;
+                    frame_done = true;
+                }
+            }
         }
 
         // --- Rendering ---
@@ -114,12 +163,6 @@ int main(int argc, char **argv)
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, NULL, &dest);
         SDL_RenderPresent(renderer);
-
-        while (SDL_PollEvent(&e))
-        {
-            if (e.type == SDL_QUIT)
-                running = false;
-        }
     }
 
     delete[] pixels;
