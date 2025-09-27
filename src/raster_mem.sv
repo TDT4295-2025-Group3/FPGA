@@ -257,35 +257,10 @@ module raster_mem #(
                     end else if(vert_ctr < 2) begin
                         draw_valid <= 1;
                         vert_ctr <= vert_ctr +1;
-                        vert_out <= vertex_ram[curr_vert_base + curr_tri[vert_ctr]];                        
+                        vert_out <= vertex_ram[curr_vert_base + curr_tri[vert_ctr]];
                     end
                 end
             endcase
         end   
     end
 endmodule
-
-
-
-//                    vert_1_out <= vertex_ram[curr_vert_base + tri_ram[curr_tri_base + tri_ctr][3*VIDX_W-1:2*VIDX_W]];  //Slice the triangle to gett ther vertex address
-//                    vert_2_out <= vertex_ram[curr_vert_base + tri_ram[curr_tri_base + tri_ctr][2*VIDX_W-1:VIDX_W]];
-//                    vert_3_out <= vertex_ram[curr_vert_base + tri_ram[curr_tri_base + tri_ctr][VIDX_W-1:0]];
-//                    if(tri_ctr < curr_tri_count) begin
-//                        rc_state <= RC_IDLE;
-//                    end else begin
-//                        tri_ctr <= tri_ctr +1;
-    
-//    assign cord_out = (rd_en) ? {
-//                       inst_ram[rd_inst_id].posx,
-//                       inst_ram[rd_inst_id].posy,
-//                       inst_ram[rd_inst_id].posz} : '0;
-    
-//    assign agl_out  = (rd_en) ? {
-//                       inst_ram[rd_inst_id].rotx,
-//                       inst_ram[rd_inst_id].roty,
-//                       inst_ram[rd_inst_id].rotz} : '0;
-                    
-//    assign scale_out = (rd_en) ? {
-//                       inst_ram[rd_inst_id].scalex,
-//                       inst_ram[rd_inst_id].scaley,
-//                       inst_ram[rd_inst_id].scalez} : '0;
