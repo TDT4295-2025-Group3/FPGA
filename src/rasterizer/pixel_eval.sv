@@ -39,84 +39,69 @@ module pixel_eval #(
     assign stage2_ready = !stage2_valid || out_ready;
 
     // ----------------------------
-    // Stage 1 registers
+    // Stage 1: Edge/Bary Numerators
     // ----------------------------
     pixel_state_t stage1_pixel;
-    logic signed [37:0] d20, d21;
-    logic signed [75:0] v_num, w_num, u_num;
-    logic stage1_inside;
+    logic signed [37:0] d20, d21;            // Q32.6
+    logic signed [75:0] v_num, w_num, u_num; // Q64.12
+    logic               stage1_inside;
 
-    // Compute e2 (pixel relative to v0) in Q16.3
+    // Sample at pixel center (x+0.5, y+0.5) → +4 in Q16.3
     logic signed [18:0] e2x, e2y;
-    assign e2x = {in_pixel.x, 3'b0} - in_pixel.triangle.v0x;
-    assign e2y = {in_pixel.y, 3'b0} - in_pixel.triangle.v0y;
+    assign e2x = {in_pixel.x, 3'b0} + 3'd4 - in_pixel.triangle.v0x;
+    assign e2y = {in_pixel.y, 3'b0} + 3'd4 - in_pixel.triangle.v0y;
 
     // d20, d21 (Q32.6)
     assign d20 = e2x * in_pixel.triangle.e0x + e2y * in_pixel.triangle.e0y;
     assign d21 = e2x * in_pixel.triangle.e1x + e2y * in_pixel.triangle.e1y;
 
-    // Numerators (Q64.12)
     always_comb begin
-        v_num = in_pixel.triangle.d11 * d20 - in_pixel.triangle.d01 * d21;
-        w_num = in_pixel.triangle.d00 * d21 - in_pixel.triangle.d01 * d20;
+        // v = (d11*d20 - d01*d21) / denom
+        // w = (d00*d21 - d01*d20) / denom
+        // u = denom - v_num - w_num (all still in numerator space)
+        v_num = in_pixel.triangle.d11 * d20 - in_pixel.triangle.d01 * d21; // Q64.12
+        w_num = in_pixel.triangle.d00 * d21 - in_pixel.triangle.d01 * d20; // Q64.12
         u_num = (in_pixel.triangle.d00 * in_pixel.triangle.d11 -
                  in_pixel.triangle.d01 * in_pixel.triangle.d01)
-                 - v_num - w_num;
+                 - v_num - w_num; // Q64.12
     end
 
-    // Inside test using denom_neg
+    // Inside test: denom ≥ 0 for proper triangles; interior iff all numerators ≥ 0
     always_comb begin
-        if (!in_pixel.triangle.denom_neg)
-            stage1_inside = (v_num >= 0 && w_num >= 0 && u_num >= 0);
-        else
-            stage1_inside = (v_num <= 0 && w_num <= 0 && u_num <= 0);
+        stage1_inside = (v_num >= 0 && w_num >= 0 && u_num >= 0);
     end
 
-    // Register stage 1
+    // Stage 1 registers
+    logic               stage1_inside_r;
     logic signed [75:0] stage1_v_num, stage1_w_num, stage1_u_num;
-    logic               stage1_inside_reg;
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            stage1_valid       <= 1'b0;
-            stage1_pixel       <= '0;
-            stage1_v_num       <= '0;
-            stage1_w_num       <= '0;
-            stage1_u_num       <= '0;
-            stage1_inside_reg  <= 1'b0;
+            stage1_valid    <= 1'b0;
+            stage1_pixel    <= '0;
+            stage1_v_num    <= '0;
+            stage1_w_num    <= '0;
+            stage1_u_num    <= '0;
+            stage1_inside_r <= 1'b0;
         end else if (stage1_ready) begin
-            stage1_valid <= in_valid;
+            stage1_valid    <= in_valid;
             if (in_valid) begin
-                stage1_pixel      <= in_pixel;
-                stage1_v_num      <= v_num;
-                stage1_w_num      <= w_num;
-                stage1_u_num      <= u_num;
-                stage1_inside_reg <= stage1_inside;
+                stage1_pixel    <= in_pixel;
+                stage1_v_num    <= v_num;
+                stage1_w_num    <= w_num;
+                stage1_u_num    <= u_num;
+                stage1_inside_r <= stage1_inside;
             end
         end
     end
 
     // ----------------------------
-    // Stage 2: Barycentric + Output
+    // Stage 2: Normalize + Interpolate
     // ----------------------------
-    pixel_state_t stage2_pixel;
-    logic signed [75:0] stage2_v_num, stage2_w_num, stage2_u_num;
+    pixel_state_t       stage2_pixel;
     logic               stage2_inside;
+    logic signed [75:0] stage2_v_num, stage2_w_num, stage2_u_num;
 
-    q16_16_t u_comb, v_comb, w_comb;
-
-    always_comb begin
-        if (stage2_inside) begin
-            v_comb = (stage2_v_num * stage2_pixel.triangle.denom_inv) >>> 16;
-            w_comb = (stage2_w_num * stage2_pixel.triangle.denom_inv) >>> 16;
-            u_comb = 32'h00010000 - v_comb - w_comb; // 1.0 in Q16.16
-        end else begin
-            u_comb = '0;
-            v_comb = '0;
-            w_comb = '0;
-        end
-    end
-
-    // Register stage 2 and drive outputs
+    // Latch stage1 -> stage2
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             stage2_valid  <= 1'b0;
@@ -125,51 +110,80 @@ module pixel_eval #(
             stage2_w_num  <= '0;
             stage2_u_num  <= '0;
             stage2_inside <= 1'b0;
-
             out_valid     <= 1'b0;
             out_x         <= '0;
             out_y         <= '0;
             out_color     <= '0;
             out_depth     <= '0;
-        end else if (stage2_ready) begin
-            stage2_valid  <= stage1_valid;
-            if (stage1_valid) begin
-                stage2_pixel  <= stage1_pixel;
-                stage2_v_num  <= stage1_v_num;
-                stage2_w_num  <= stage1_w_num;
-                stage2_u_num  <= stage1_u_num;
-                stage2_inside <= stage1_inside_reg;
+        end else begin
+            if (stage2_ready) begin
+                stage2_valid  <= stage1_valid;
+                if (stage1_valid) begin
+                    stage2_pixel  <= stage1_pixel;
+                    stage2_v_num  <= stage1_v_num;
+                    stage2_w_num  <= stage1_w_num;
+                    stage2_u_num  <= stage1_u_num;
+                    stage2_inside <= stage1_inside_r;
+                end
             end
+        end
+    end
 
-            out_valid <= stage2_valid && stage2_inside;
-            if (stage2_valid && stage2_inside) begin
-                out_x <= stage2_pixel.x;
-                out_y <= stage2_pixel.y;
+    // denom_inv is Q0.16 (1/denom with denom Q64.0). Numerators are Q64.12.
+    // v = v_num * denom_inv  -> Q64.28; shift RIGHT by 12 to get Q64.16 → cast to q16_16_t.
+    q16_16_t u_w, v_w, w_w; // bary weights in Q16.16
 
-                // Color interpolation (per channel 4-bit)
-                out_color[11:8] <= (u_comb * stage2_pixel.triangle.v0_color[11:8] +
-                                    v_comb * stage2_pixel.triangle.v1_color[11:8] +
-                                    w_comb * stage2_pixel.triangle.v2_color[11:8]) >>> 16;
-                out_color[7:4]  <= (u_comb * stage2_pixel.triangle.v0_color[7:4] +
-                                    v_comb * stage2_pixel.triangle.v1_color[7:4] +
-                                    w_comb * stage2_pixel.triangle.v2_color[7:4]) >>> 16;
-                out_color[3:0]  <= (u_comb * stage2_pixel.triangle.v0_color[3:0] +
-                                    v_comb * stage2_pixel.triangle.v1_color[3:0] +
-                                    w_comb * stage2_pixel.triangle.v2_color[3:0]) >>> 16;
+    logic signed [93:0] v_mul, w_mul, u_mul; // 76b * 18b = 94b
+    always_comb begin
+        v_mul = stage2_v_num * $signed({1'b0, stage2_pixel.triangle.denom_inv}); // denom_inv ≥ 0
+        w_mul = stage2_w_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
+        u_mul = stage2_u_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
+        // if (stage2_valid) begin
+        //     $display("v_mul=%d w_mul=%d u_mul=%d, denom_inv=%d stage2_valid=%b",
+        //              v_mul, w_mul, u_mul, stage2_pixel.triangle.denom_inv, stage2_valid);
+        // end
+        v_w = q16_16_t'((v_mul + 12'sd2048) >>> 12); // round-to-nearest
+        w_w = q16_16_t'((w_mul + 12'sd2048) >>> 12); // round-to-nearest
+        u_w = q16_16_t'(32'h0001_0000) - v_w - w_w; // enforce sum to 1.0
+    end
 
-                // Depth interpolation
-                out_depth <= (u_comb * stage2_pixel.triangle.v0_depth +
-                              v_comb * stage2_pixel.triangle.v1_depth +
-                              w_comb * stage2_pixel.triangle.v2_depth) >>> 16;
-            end else begin
-                out_x     <= stage2_pixel.x;
-                out_y     <= stage2_pixel.y;
-                out_color <= 12'b0;
-                out_depth <= 32'b0;
-            end
-        end else if (out_ready && out_valid) begin
-            // Output was consumed, but no new data
+    // Outputs
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
             out_valid <= 1'b0;
+        end else begin
+            if (stage2_valid && (!out_valid || out_ready)) begin
+                out_valid <= stage2_inside;
+                if (stage2_inside) begin
+                    out_x <= stage2_pixel.x;
+                    out_y <= stage2_pixel.y;
+
+                    // Color interpolation with rounding (add 0.5 ulp)
+                    out_color[11:8] <= ( (u_w * $unsigned(stage2_pixel.triangle.v0_color[11:8])) +
+                                         (v_w * $unsigned(stage2_pixel.triangle.v1_color[11:8])) +
+                                         (w_w * $unsigned(stage2_pixel.triangle.v2_color[11:8])) + 32'h0000_8000 ) >>> 16;
+
+                    out_color[7:4]  <= ( (u_w * $unsigned(stage2_pixel.triangle.v0_color[7:4])) +
+                                         (v_w * $unsigned(stage2_pixel.triangle.v1_color[7:4])) +
+                                         (w_w * $unsigned(stage2_pixel.triangle.v2_color[7:4])) + 32'h0000_8000 ) >>> 16;
+
+                    out_color[3:0]  <= ( (u_w * $unsigned(stage2_pixel.triangle.v0_color[3:0])) +
+                                         (v_w * $unsigned(stage2_pixel.triangle.v1_color[3:0])) +
+                                         (w_w * $unsigned(stage2_pixel.triangle.v2_color[3:0])) + 32'h0000_8000 ) >>> 16;
+
+                    // Depth interpolate (q16_16_t)
+                    out_depth <= ( (u_w * stage2_pixel.triangle.v0_depth) +
+                                   (v_w * stage2_pixel.triangle.v1_depth) +
+                                   (w_w * stage2_pixel.triangle.v2_depth) + 32'h0000_8000 ) >>> 16;
+                end else begin
+                    out_x     <= stage2_pixel.x;
+                    out_y     <= stage2_pixel.y;
+                    out_color <= '0;
+                    out_depth <= '0;
+                end
+            end else if (out_ready && out_valid) begin
+                out_valid <= 1'b0;
+            end
         end
     end
 

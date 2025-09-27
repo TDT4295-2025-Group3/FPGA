@@ -4,14 +4,14 @@
 
 VERILATOR       = verilator
 VERILATOR_FLAGS = --trace -cc --exe \
-    -Wall -O3 -D_REENTRANT \
-    -Wno-UNUSED -Wno-UNDRIVEN -Wno-WIDTH -Wno-STMTDLY \
-    -I/usr/include/SDL2 -D_REENTRANT -Wno-IMPORTSTAR 
-	
+	-Wall -O3 -D_REENTRANT \
+	-Wno-UNUSED -Wno-UNDRIVEN -Wno-WIDTH -Wno-STMTDLY \
+	-Wno-PINCONNECTEMPTY  \
+	-I/usr/include/SDL2 -D_REENTRANT -Wno-IMPORTSTAR 
 
 FILELIST   = ../filelist.f
 SOURCELIST := $(shell cat $(FILELIST))
-SRC      := $(addprefix ../, $(SOURCELIST)) stubs/BUFG.sv stubs/MMCME2_BASE.sv stubs/xpm_memory_tdpram.sv main.cpp top_sim.sv
+SRC      := $(addprefix ../, $(SOURCELIST)) stubs/BUFG.sv stubs/MMCME2_BASE.sv stubs/xpm_memory_tdpram.sv stubs/div_rasterizer.sv main.cpp top_sim.sv
 
 TOP_MODULE = top_sim
 BUILD_DIR  = obj_dir
