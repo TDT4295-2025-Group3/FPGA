@@ -6,14 +6,16 @@ package rasterizer_pkg;
     import color_pkg::*;
     import vertex_pkg::vertex_t;
 
-   typedef struct packed {
-        logic signed [18:0] v0x, v0y; // Q16.3
-        logic signed [18:0] e0x, e0y, e1x, e1y; // Q16.3
-        logic signed [37:0] d00, d01, d11; // Q32.6
+    typedef struct packed {
+        logic signed [18:0] v0x, v0y;                 // Q16.3
+        logic signed [18:0] e0x, e0y, e1x, e1y;       // Q16.3
+        logic signed [37:0] d00, d01, d11;            // Q32.6
 
-        logic [16:0]        denom_inv; // reciprocal in Q0.16
-        logic               denom_neg; // true if denom < 0
+        // CHANGED: make reciprocal signed so signed multiplies/arithmetic shifts propagate correctly
+        logic signed [16:0] denom_inv;                // Q0.16
+        logic               denom_neg;                // true if denom < 0
 
+        // ... (rest of your fields unchanged)
         logic [15:0]  bbox_min_x, bbox_max_x;
         logic [15:0]  bbox_min_y, bbox_max_y;
 
@@ -24,7 +26,6 @@ package rasterizer_pkg;
     typedef struct packed {
         logic [15:0] x;
         logic [15:0] y;
-
         triangle_state_t triangle;
     } pixel_state_t;
 
