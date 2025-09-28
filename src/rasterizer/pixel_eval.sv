@@ -27,144 +27,175 @@ module pixel_eval #(
     output logic        busy
 );
 
-    // ----------------------------
-    // Pipeline control
-    // ----------------------------
-    logic stage1_ready, stage2_ready;
-    logic stage1_valid, stage2_valid;
-    assign busy = stage1_valid || stage2_valid || out_valid;
-
-    assign in_ready     = stage1_ready;
-    assign stage1_ready = !stage1_valid || stage2_ready;
-    assign stage2_ready = !stage2_valid || out_ready;
+    // ============================================================
+    // 4-stage pipeline:
+    //   S0: input reg
+    //   S1: e2 + d20/d21
+    //   S2: numerators u/v/w + inside
+    //   S3: weights + color/depth interpolate + output reg
+    // ============================================================
 
     // ----------------------------
-    // Stage 1: Edge/Bary Numerators
+    // Flow control
     // ----------------------------
-    pixel_state_t stage1_pixel;
-    logic signed [37:0] d20, d21;            // Q32.6
-    logic signed [75:0] v_num, w_num, u_num; // Q64.12
-    logic               stage1_inside;
+    logic s0_valid, s1_valid, s2_valid, s3_valid;
+    wire  s3_ready  = !s3_valid || out_ready;
+    wire  s2_ready  = !s2_valid || s3_ready;
+    wire  s1_ready  = !s1_valid || s2_ready;
+    assign in_ready = !s0_valid || s1_ready;
 
-    // Sample at pixel center (x+0.5, y+0.5) → +4 in Q16.3
-    logic signed [18:0] e2x, e2y;
-    assign e2x = {in_pixel.x, 3'b0} + 3'd4 - in_pixel.triangle.v0x;
-    assign e2y = {in_pixel.y, 3'b0} + 3'd4 - in_pixel.triangle.v0y;
+    assign busy = s0_valid | s1_valid | s2_valid | s3_valid | out_valid;
 
-    assign d20 = e2x * in_pixel.triangle.e0x + e2y * in_pixel.triangle.e0y;
-    assign d21 = e2x * in_pixel.triangle.e1x + e2y * in_pixel.triangle.e1y;
+    // ----------------------------
+    // S0: input register
+    // ----------------------------
+    pixel_state_t s0_pixel;
 
-    always_comb begin
-        v_num = in_pixel.triangle.d11 * d20 - in_pixel.triangle.d01 * d21;
-        w_num = in_pixel.triangle.d00 * d21 - in_pixel.triangle.d01 * d20;
-        u_num = (in_pixel.triangle.d00 * in_pixel.triangle.d11 -
-                 in_pixel.triangle.d01 * in_pixel.triangle.d01)
-                 - v_num - w_num;
-        stage1_inside = (v_num >= 0 && w_num >= 0 && u_num >= 0);
-    end
-
-    // Stage 1 registers
-    logic               stage1_inside_r;
-    logic signed [75:0] stage1_v_num, stage1_w_num, stage1_u_num;
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            stage1_valid    <= 1'b0;
-            stage1_pixel    <= '0;
-            stage1_v_num    <= '0;
-            stage1_w_num    <= '0;
-            stage1_u_num    <= '0;
-            stage1_inside_r <= 1'b0;
-        end else if (stage1_ready) begin
-            stage1_valid    <= in_valid;
-            if (in_valid) begin
-                stage1_pixel    <= in_pixel;
-                stage1_v_num    <= v_num;
-                stage1_w_num    <= w_num;
-                stage1_u_num    <= u_num;
-                stage1_inside_r <= stage1_inside;
+            s0_valid <= 1'b0;
+            s0_pixel <= '0;
+        end else if (s1_ready) begin
+            s0_valid <= in_valid;
+            if (in_valid) s0_pixel <= in_pixel;
+        end
+    end
+
+    // ----------------------------
+    // S1: d20/d21
+    // ----------------------------
+    pixel_state_t s1_pixel;
+    (* use_dsp = "yes" *) logic signed [37:0] s1_d20, s1_d21;
+    logic signed [18:0] s1_e2x, s1_e2y;
+
+    // pixel center (x+0.5,y+0.5) => +4 in Q16.3
+    always_comb begin
+        s1_e2x = {s0_pixel.x, 3'b000} + 19'sd4 - s0_pixel.triangle.v0x;
+        s1_e2y = {s0_pixel.y, 3'b000} + 19'sd4 - s0_pixel.triangle.v0y;
+    end
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            s1_valid <= 1'b0;
+            s1_pixel <= '0;
+            s1_d20   <= '0;
+            s1_d21   <= '0;
+        end else if (s2_ready) begin
+            s1_valid <= s0_valid;
+            if (s0_valid) begin
+                s1_pixel <= s0_pixel;
+                s1_d20   <= s1_e2x * s0_pixel.triangle.e0x + s1_e2y * s0_pixel.triangle.e0y;
+                s1_d21   <= s1_e2x * s0_pixel.triangle.e1x + s1_e2y * s0_pixel.triangle.e1y;
             end
         end
     end
 
     // ----------------------------
-    // Stage 2 registers
+    // S2: numerators & inside
     // ----------------------------
-    pixel_state_t       stage2_pixel;
-    logic               stage2_inside;
-    logic signed [75:0] stage2_v_num, stage2_w_num, stage2_u_num;
+    pixel_state_t s2_pixel;
+    (* use_dsp = "yes" *) logic signed [75:0] s2_v_num, s2_w_num, s2_u_num; // Q64.12
+    (* use_dsp = "yes" *) logic signed [75:0] s2_denom_q64_12;
+    logic s2_inside;
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            stage2_valid  <= 1'b0;
-            stage2_pixel  <= '0;
-            stage2_v_num  <= '0;
-            stage2_w_num  <= '0;
-            stage2_u_num  <= '0;
-            stage2_inside <= 1'b0;
-        end else if (stage2_ready) begin
-            stage2_valid  <= stage1_valid;
-            if (stage1_valid) begin
-                stage2_pixel  <= stage1_pixel;
-                stage2_v_num  <= stage1_v_num;
-                stage2_w_num  <= stage1_w_num;
-                stage2_u_num  <= stage1_u_num;
-                stage2_inside <= stage1_inside_r;
+            s2_valid <= 1'b0;
+            s2_pixel <= '0;
+            s2_v_num <= '0; s2_w_num <= '0; s2_u_num <= '0;
+            s2_inside <= 1'b0;
+            s2_denom_q64_12 <= '0;
+        end else if (s3_ready) begin
+            s2_valid <= s1_valid;
+            if (s1_valid) begin
+                s2_pixel <= s1_pixel;
+
+                s2_v_num <= $signed(s1_pixel.triangle.d11) * $signed(s1_d20)
+                         -  $signed(s1_pixel.triangle.d01) * $signed(s1_d21);
+
+                s2_w_num <= $signed(s1_pixel.triangle.d00) * $signed(s1_d21)
+                         -  $signed(s1_pixel.triangle.d01) * $signed(s1_d20);
+
+                s2_denom_q64_12 <= $signed(s1_pixel.triangle.d00) * $signed(s1_pixel.triangle.d11)
+                                 -  $signed(s1_pixel.triangle.d01) * $signed(s1_pixel.triangle.d01);
+
+                s2_u_num <= s2_denom_q64_12 - s2_v_num - s2_w_num;
+
+                if (s1_pixel.triangle.denom_neg)
+                    s2_inside <= (s2_v_num <= 0) && (s2_w_num <= 0) && (s2_u_num <= 0);
+                else
+                    s2_inside <= (s2_v_num >= 0) && (s2_w_num >= 0) && (s2_u_num >= 0);
             end
         end
     end
 
     // ----------------------------
-    // Barycentric weights (Q16.16)
+    // S3: weights + interpolation + output
     // ----------------------------
-    q16_16_t u_w, v_w, w_w;
-    logic signed [93:0] v_mul, w_mul, u_mul;
-    always_comb begin
-        v_mul = stage2_v_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
-        w_mul = stage2_w_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
-        u_mul = stage2_u_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
+    (* use_dsp = "yes" *) logic signed [93:0] s3_v_mul, s3_w_mul, s3_u_mul; // 76x17
+    q16_16_t v_w, w_w, u_w;
+    pixel_state_t s3_pixel;
+    logic s3_inside;
 
-        v_w = q16_16_t'((v_mul + 28'd134217728) >>> 28); // round-to-nearest
-        w_w = q16_16_t'((w_mul + 28'd134217728) >>> 28);
-        u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
-    end
-
-    // ----------------------------
-    // Final output registers
-    // ----------------------------
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
+            s3_valid  <= 1'b0;
+            s3_pixel  <= '0;
+            s3_inside <= 1'b0;
+            s3_v_mul <= '0; s3_w_mul <= '0; s3_u_mul <= '0;
+            v_w <= '0; w_w <= '0; u_w <= '0;
             out_valid <= 1'b0;
-            out_x     <= '0;
-            out_y     <= '0;
-            out_color <= '0;
-            out_depth <= '0;
-        end else if (stage2_valid && (!out_valid || out_ready)) begin
-            out_valid <= stage2_inside;
-            out_x     <= stage2_pixel.x;
-            out_y     <= stage2_pixel.y;
+            out_x <= '0; out_y <= '0; out_color <= '0; out_depth <= '0;
+        end else begin
+            // latch stage 3 when downstream is ready
+            if (s3_ready) begin
+                s3_valid  <= s2_valid;
+                if (s2_valid) begin
+                    s3_pixel  <= s2_pixel;
+                    s3_inside <= s2_inside;
 
-            if (stage2_inside) begin
-                out_color[11:8] <= ((u_w * $unsigned(stage2_pixel.triangle.v0_color[11:8])) +
-                                    (v_w * $unsigned(stage2_pixel.triangle.v1_color[11:8])) +
-                                    (w_w * $unsigned(stage2_pixel.triangle.v2_color[11:8])) + 32'h0000_8000) >>> 16;
+                    // Weights: (num * denom_inv) >> 28  (round)
+                    s3_v_mul <= s2_v_num * $signed({1'b0, s2_pixel.triangle.denom_inv});
+                    s3_w_mul <= s2_w_num * $signed({1'b0, s2_pixel.triangle.denom_inv});
+                    s3_u_mul <= s2_u_num * $signed({1'b0, s2_pixel.triangle.denom_inv});
 
-                out_color[7:4]  <= ((u_w * $unsigned(stage2_pixel.triangle.v0_color[7:4])) +
-                                    (v_w * $unsigned(stage2_pixel.triangle.v1_color[7:4])) +
-                                    (w_w * $unsigned(stage2_pixel.triangle.v2_color[7:4])) + 32'h0000_8000) >>> 16;
-
-                out_color[3:0]  <= ((u_w * $unsigned(stage2_pixel.triangle.v0_color[3:0])) +
-                                    (v_w * $unsigned(stage2_pixel.triangle.v1_color[3:0])) +
-                                    (w_w * $unsigned(stage2_pixel.triangle.v2_color[3:0])) + 32'h0000_8000) >>> 16;
-
-                out_depth <= ((u_w * stage2_pixel.triangle.v0_depth) +
-                              (v_w * stage2_pixel.triangle.v1_depth) +
-                              (w_w * stage2_pixel.triangle.v2_depth) + 32'h0000_8000) >>> 16;
-            end else begin
-                out_color <= '0;
-                out_depth <= '0;
+                    v_w <= q16_16_t'((s3_v_mul + 94'd134217728) >>> 28);
+                    w_w <= q16_16_t'((s3_w_mul + 94'd134217728) >>> 28);
+                    u_w <= q16_16_t'(32'h0001_0000) - v_w - w_w;
+                end
             end
-        end else if (out_ready && out_valid) begin
-            out_valid <= 1'b0;
+
+            // output stage
+            if (out_ready || !out_valid) begin
+                out_valid <= s3_valid & s3_inside;
+                if (s3_valid) begin
+                    out_x <= s3_pixel.x;
+                    out_y <= s3_pixel.y;
+
+                    if (s3_inside) begin
+                        // Interpolate RGB444 by nibbles (round >>16)
+                        out_color[11:8] <= ((u_w * $unsigned(s3_pixel.triangle.v0_color[11:8])) +
+                                            (v_w * $unsigned(s3_pixel.triangle.v1_color[11:8])) +
+                                            (w_w * $unsigned(s3_pixel.triangle.v2_color[11:8])) + 32'h0000_8000) >>> 16;
+
+                        out_color[7:4]  <= ((u_w * $unsigned(s3_pixel.triangle.v0_color[7:4])) +
+                                            (v_w * $unsigned(s3_pixel.triangle.v1_color[7:4])) +
+                                            (w_w * $unsigned(s3_pixel.triangle.v2_color[7:4])) + 32'h0000_8000) >>> 16;
+
+                        out_color[3:0]  <= ((u_w * $unsigned(s3_pixel.triangle.v0_color[3:0])) +
+                                            (v_w * $unsigned(s3_pixel.triangle.v1_color[3:0])) +
+                                            (w_w * $unsigned(s3_pixel.triangle.v2_color[3:0])) + 32'h0000_8000) >>> 16;
+
+                        // Depth (round >>16)
+                        out_depth <= ((u_w * s3_pixel.triangle.v0_depth) +
+                                      (v_w * s3_pixel.triangle.v1_depth) +
+                                      (w_w * s3_pixel.triangle.v2_depth) + 32'h0000_8000) >>> 16;
+                    end else begin
+                        out_color <= '0;
+                        out_depth <= '0;
+                    end
+                end
+            end
         end
     end
 
