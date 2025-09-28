@@ -58,7 +58,6 @@ module pixel_eval #(
     always_comb begin
         // v = (d11*d20 - d01*d21) / denom
         // w = (d00*d21 - d01*d20) / denom
-        // u = denom - v_num - w_num (all still in numerator space)
         v_num = in_pixel.triangle.d11 * d20 - in_pixel.triangle.d01 * d21; // Q64.12
         w_num = in_pixel.triangle.d00 * d21 - in_pixel.triangle.d01 * d20; // Q64.12
         u_num = (in_pixel.triangle.d00 * in_pixel.triangle.d11 -
@@ -66,7 +65,7 @@ module pixel_eval #(
                  - v_num - w_num; // Q64.12
     end
 
-    // Inside test: denom ≥ 0 for proper triangles; interior iff all numerators ≥ 0
+    // Inside test
     always_comb begin
         stage1_inside = (v_num >= 0 && w_num >= 0 && u_num >= 0);
     end
@@ -101,7 +100,6 @@ module pixel_eval #(
     logic               stage2_inside;
     logic signed [75:0] stage2_v_num, stage2_w_num, stage2_u_num;
 
-    // Latch stage1 -> stage2
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             stage2_valid  <= 1'b0;
@@ -129,25 +127,25 @@ module pixel_eval #(
         end
     end
 
-    // denom_inv is Q0.16 (1/denom with denom Q64.0). Numerators are Q64.12.
-    // v = v_num * denom_inv  -> Q64.28; shift RIGHT by 12 to get Q64.16 → cast to q16_16_t.
-    q16_16_t u_w, v_w, w_w; // bary weights in Q16.16
-
-    logic signed [93:0] v_mul, w_mul, u_mul; // 76b * 18b = 94b
+    // ----------------------------
+    // Barycentric weights (Q16.16)
+    // ----------------------------
+    q16_16_t u_w, v_w, w_w;
+    logic signed [93:0] v_mul, w_mul, u_mul;
     always_comb begin
-        v_mul = stage2_v_num * $signed({1'b0, stage2_pixel.triangle.denom_inv}); // denom_inv ≥ 0
+        v_mul = stage2_v_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
         w_mul = stage2_w_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
         u_mul = stage2_u_num * $signed({1'b0, stage2_pixel.triangle.denom_inv});
-        // if (stage2_valid) begin
-        //     $display("v_mul=%d w_mul=%d u_mul=%d, denom_inv=%d stage2_valid=%b",
-        //              v_mul, w_mul, u_mul, stage2_pixel.triangle.denom_inv, stage2_valid);
-        // end
-        v_w = q16_16_t'((v_mul + 12'sd2048) >>> 12); // round-to-nearest
-        w_w = q16_16_t'((w_mul + 12'sd2048) >>> 12); // round-to-nearest
-        u_w = q16_16_t'(32'h0001_0000) - v_w - w_w; // enforce sum to 1.0
+
+        // Correct scaling: shift right by 28 to land in Q16.16
+        v_w = q16_16_t'((v_mul + 28'd134217728) >>> 28); // round-to-nearest
+        w_w = q16_16_t'((w_mul + 28'd134217728) >>> 28);
+        u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
     end
 
+    // ----------------------------
     // Outputs
+    // ----------------------------
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             out_valid <= 1'b0;
@@ -158,7 +156,7 @@ module pixel_eval #(
                     out_x <= stage2_pixel.x;
                     out_y <= stage2_pixel.y;
 
-                    // Color interpolation with rounding (add 0.5 ulp)
+                    // Color interpolation per nibble
                     out_color[11:8] <= ( (u_w * $unsigned(stage2_pixel.triangle.v0_color[11:8])) +
                                          (v_w * $unsigned(stage2_pixel.triangle.v1_color[11:8])) +
                                          (w_w * $unsigned(stage2_pixel.triangle.v2_color[11:8])) + 32'h0000_8000 ) >>> 16;
@@ -171,7 +169,7 @@ module pixel_eval #(
                                          (v_w * $unsigned(stage2_pixel.triangle.v1_color[3:0])) +
                                          (w_w * $unsigned(stage2_pixel.triangle.v2_color[3:0])) + 32'h0000_8000 ) >>> 16;
 
-                    // Depth interpolate (q16_16_t)
+                    // Depth interpolation
                     out_depth <= ( (u_w * stage2_pixel.triangle.v0_depth) +
                                    (v_w * stage2_pixel.triangle.v1_depth) +
                                    (w_w * stage2_pixel.triangle.v2_depth) + 32'h0000_8000 ) >>> 16;

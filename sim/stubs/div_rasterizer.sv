@@ -1,83 +1,140 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-module div_rasterizer (
+module div_rasterizer #(
+    parameter int FRACTIONAL_WIDTH = 17,
+    // Set to 1 to drop the LSB of the 17-bit fraction so your logs match Vivado (0x10c vs 0x218)
+    parameter bit DROP_LSB_TO_MATCH_VIVADO = 0
+)(
     input  logic         aclk,
     input  logic         aresetn,
 
-    // Divisor stream
-    input  logic [63:0]  s_axis_divisor_tdata,
+    // Divisor stream (signed 64-bit)
     input  logic         s_axis_divisor_tvalid,
     output logic         s_axis_divisor_tready,
+    input  logic [63:0]  s_axis_divisor_tdata,
 
-    // Dividend stream
-    input  logic [63:0]  s_axis_dividend_tdata,
+    // Dividend stream (signed 64-bit)
     input  logic         s_axis_dividend_tvalid,
     output logic         s_axis_dividend_tready,
+    input  logic [63:0]  s_axis_dividend_tdata,
 
     // Result stream
-    output logic [87:0]  m_axis_dout_tdata,   // {rem[43:0], quot[43:0]}
     output logic         m_axis_dout_tvalid,
-    output logic         m_axis_dout_tuser,   // dbz flag
-    input  logic         m_axis_dout_tready
+    input  logic         m_axis_dout_tready,
+    output logic [0:0]   m_axis_dout_tuser,    // [0] = divide-by-zero
+    output logic [87:0]  m_axis_dout_tdata     // {7x sign, 81-bit signed Q}
 );
 
-    typedef enum logic [1:0] {IDLE, BUSY, OUT} state_t;
-    state_t state, nxt;
+    // -------------------------
+    // Independent input latches
+    // -------------------------
+    logic signed [63:0] lat_dividend;
+    logic               lat_dividend_v;
 
-    logic [63:0] divisor_reg, dividend_reg;
-    logic [63:0] quot, rem;
-    logic        dbz;
+    logic signed [63:0] lat_divisor;
+    logic               lat_divisor_v;
 
-    // Ready when we can accept both streams
-    assign s_axis_divisor_tready  = (state == IDLE);
-    assign s_axis_dividend_tready = (state == IDLE);
+    // Accept whenever the channel's latch is free
+    assign s_axis_dividend_tready = !lat_dividend_v;
+    assign s_axis_divisor_tready  = !lat_divisor_v;
 
-    // Simple 1-cycle compute and 1-cycle output
-    always_ff @(posedge aclk or negedge aresetn) begin
-        if (!aresetn) begin
-            state <= IDLE;
-        end else begin
-            state <= nxt;
-        end
-    end
+    // -------------------------
+    // Single-result output regs
+    // -------------------------
+    logic               out_valid;
+    logic               out_dbz;
+    logic signed [80:0] out_result;  // 81-bit signed (integer + fraction)
 
-    always_comb begin
-        nxt = state;
-        unique case (state)
-            IDLE: if (s_axis_divisor_tvalid && s_axis_dividend_tvalid) nxt = BUSY;
-            BUSY: nxt = OUT;
-            OUT:  if (m_axis_dout_tready) nxt = IDLE;
-            default: nxt = IDLE;
-        endcase
+    // Pack to 88 bits with sign extension (Vivado layout)
+    assign m_axis_dout_tvalid = out_valid;
+    assign m_axis_dout_tuser  = out_dbz;
+    assign m_axis_dout_tdata  = { {7{out_result[80]}}, out_result };
 
-    end
-
-    always_ff @(posedge aclk or negedge aresetn) begin
-        if (!aresetn) begin
-            divisor_reg <= '0;
-            dividend_reg <= '0;
-        end else if (state == IDLE && s_axis_divisor_tvalid && s_axis_dividend_tvalid) begin
-            divisor_reg  <= s_axis_divisor_tdata;
-            dividend_reg <= s_axis_dividend_tdata;
-        end
-    end
+    // -------------------------
+    // Combinational 128-bit math
+    // -------------------------
+    logic               calc_dbz;
+    logic signed [127:0] calc_num, calc_den, calc_q, calc_q_emit;
+    logic signed [80:0]  calc_out81;
 
     always_comb begin
-        if (divisor_reg == 64'd0) begin
-            dbz = 1'b1;
-            quot = 64'd0;
-            rem  = dividend_reg;
-        end else begin
-            dbz = 1'b0;
-            quot = dividend_reg / divisor_reg;
-            rem  = dividend_reg % divisor_reg;
+        // Defaults
+        calc_dbz    = 1'b0;
+        calc_num    = '0;
+        calc_den    = '0;
+        calc_q      = '0;
+        calc_q_emit = '0;
+        calc_out81  = '0;
+
+        if (lat_dividend_v && lat_divisor_v) begin
+            if (lat_divisor == 0) begin
+                calc_dbz = 1'b1;
+            end else begin
+                // Q64.17 internally: floor((dividend << FRACTIONAL_WIDTH)/divisor)
+                calc_num = {{64{lat_dividend[63]}}, lat_dividend};
+                calc_num = calc_num <<< FRACTIONAL_WIDTH;
+                calc_den = {{64{lat_divisor[63]}},  lat_divisor};
+                calc_q   = calc_num / calc_den; // trunc toward 0 per SV
+            end
         end
+
+        // Emit adjustment: drop the LSB to match Vivado-observed raw_div (Q64.16 effect)
+        if (DROP_LSB_TO_MATCH_VIVADO) begin
+            // arithmetic shift right by 1 preserves sign
+            calc_q_emit = calc_q >>> 1;
+        end else begin
+            calc_q_emit = calc_q;
+        end
+
+        // Truncate to 81-bit signed like the IP packing
+        calc_out81 = calc_q_emit[80:0];
     end
 
-    // Output: {remainder[43:0], quotient[43:0]} — your setup reads quotient[16:0]
-    assign m_axis_dout_tdata  = {rem[43:0], quot[43:0]};
-    assign m_axis_dout_tvalid = (state == OUT);
-    assign m_axis_dout_tuser  = dbz;
+    // -------------------------
+    // Sequencing (nonblocking <=)
+    // -------------------------
+    always_ff @(posedge aclk or negedge aresetn) begin
+        if (!aresetn) begin
+            lat_dividend_v <= 1'b0;
+            lat_divisor_v  <= 1'b0;
+            lat_dividend   <= '0;
+            lat_divisor    <= '0;
+
+            out_valid      <= 1'b0;
+            out_dbz        <= 1'b0;
+            out_result     <= '0;
+        end else begin
+            // Latch inputs independently
+            if (s_axis_dividend_tvalid && s_axis_dividend_tready) begin
+                lat_dividend   <= $signed(s_axis_dividend_tdata);
+                lat_dividend_v <= 1'b1;
+            end
+            if (s_axis_divisor_tvalid && s_axis_divisor_tready) begin
+                lat_divisor   <= $signed(s_axis_divisor_tdata);
+                lat_divisor_v <= 1'b1;
+            end
+
+            // Output handshake
+            if (out_valid) begin
+                if (m_axis_dout_tready) begin
+                    out_valid <= 1'b0;  // consumed
+                end
+            end else begin
+                // No result pending → if both operands ready, compute and present
+                if (lat_dividend_v && lat_divisor_v) begin
+                    out_dbz    <= calc_dbz;
+                    out_result <= calc_out81;
+                    out_valid  <= 1'b1;
+
+                    // consume the latched operands
+                    lat_dividend_v <= 1'b0;
+                    lat_divisor_v  <= 1'b0;
+                end
+            end
+        end
+    end
 
 endmodule
+
+`default_nettype wire
