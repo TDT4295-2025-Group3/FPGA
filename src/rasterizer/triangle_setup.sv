@@ -34,7 +34,7 @@ module triangle_setup #(
     logic               denom_neg;
 
     // Divider interface signals
-    logic        div_s_valid, div_s_ready;
+    logic        div_s_valid, div_divisor_tready, div_dividend_tready;
     logic [63:0] div_divisor, div_dividend;
     logic        div_m_valid;
     logic [87:0] div_m_data;
@@ -49,11 +49,11 @@ module triangle_setup #(
 
         .s_axis_divisor_tdata    (div_divisor),
         .s_axis_divisor_tvalid   (div_s_valid),
-        .s_axis_divisor_tready   (div_s_ready),
+        .s_axis_divisor_tready   (div_divisor_tready),
 
         .s_axis_dividend_tdata   (div_dividend),
         .s_axis_dividend_tvalid  (div_s_valid),
-        .s_axis_dividend_tready  (/*unused*/),
+        .s_axis_dividend_tready  (div_dividend_tready),
 
         .m_axis_dout_tdata       (div_m_data),
         .m_axis_dout_tvalid      (div_m_valid),
@@ -81,11 +81,24 @@ module triangle_setup #(
     always_comb begin
         next_state = state;
         unique case (state)
-            S_IDLE:      if (in_valid && in_ready)   next_state = S_DIV_START;
-            S_DIV_START: if (div_s_ready)            next_state = S_DIV_WAIT;  // fire one transaction
-            S_DIV_WAIT:  if (div_m_valid)            next_state = S_OUTPUT;    // wait for Q0.17 result
-            S_OUTPUT:    if (out_valid && out_ready) next_state = S_IDLE;
-            default:     next_state = S_IDLE;
+            S_IDLE: begin
+                if (in_valid && in_ready)
+                    next_state = S_DIV_START;
+            end
+            // IMPORTANT FIX: require BOTH input channel readies before leaving START
+            S_DIV_START: begin
+                if (div_divisor_tready && div_dividend_tready)
+                    next_state = S_DIV_WAIT;  // one full transaction issued
+            end
+            S_DIV_WAIT: begin
+                if (div_m_valid)
+                    next_state = S_OUTPUT;    // got Q0.17 result
+            end
+            S_OUTPUT: begin
+                if (out_valid && out_ready)
+                    next_state = S_IDLE;
+            end
+            default: next_state = S_IDLE;
         endcase
     end
 
@@ -164,7 +177,7 @@ module triangle_setup #(
                 tri_reg.denom_inv <= div_m_data[16:1]; // Q0.16
                 tri_reg.denom_neg <= denom_neg;
 
-                // Debug: print the Q0.16 value we actually use, inline (no local decls)
+                // Debug: print the Q0.16 value we actually use
                 $display("[%0t] denom=%0d raw_div(Q0.16)=%h (%0d) as real=%f (neg=%0d dbz=%0d)",
                          $time,
                          denom_comb,
@@ -180,11 +193,12 @@ module triangle_setup #(
     // Expose current triangle state (registered above)
     assign out_state = tri_reg;
 
-always_ff @(posedge clk) begin
-  if (div_m_valid) begin
-    $display("DIV: raw_data=%h quot=%0d (Q0.16)",
-             div_m_data, div_m_data[43:0]);
-  end
-end
+    // Optional divider debug
+    always_ff @(posedge clk) begin
+      if (div_m_valid) begin
+        $display("DIV: raw_data=%h quot=%0d (Q0.16)",
+                 div_m_data, $signed(div_m_data[16:1]));
+      end
+    end
 
 endmodule
