@@ -11,11 +11,9 @@ package rasterizer_pkg;
         logic signed [18:0] e0x, e0y, e1x, e1y;       // Q16.3
         logic signed [37:0] d00, d01, d11;            // Q32.6
 
-        // CHANGED: make reciprocal signed so signed multiplies/arithmetic shifts propagate correctly
-        logic signed [16:0] denom_inv;                // Q0.16
-        logic               denom_neg;                // true if denom < 0
+        logic [15:0] denom_inv;                // Q0.16
+        logic        denom_neg;                // true if denom < 0
 
-        // ... (rest of your fields unchanged)
         logic [15:0]  bbox_min_x, bbox_max_x;
         logic [15:0]  bbox_min_y, bbox_max_y;
 

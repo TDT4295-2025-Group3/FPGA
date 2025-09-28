@@ -20,25 +20,15 @@ module rasterizer #(
     
     input wire logic in_valid,
     output logic in_ready,
-    output logic busy,
 
     output logic [15:0]  out_pixel_x,
     output logic [15:0] out_pixel_y,
     output q16_16_t                   out_depth,
     output color12_t                  out_color,
     output logic                      out_valid,
-    input wire logic                 out_ready
+    input wire logic                 out_ready,
+    output logic busy
 );
-
-    always_comb begin
-        if (in_valid && in_ready) begin
-            $display("Rasterizer received triangle: v0=(%0d,%0d,%0d) c=%0h, v1=(%0d,%0d,%0d) c=%0h, v2=(%0d,%0d,%0d) c=%0h",
-                v0.pos.x, v0.pos.y, v0.pos.z, v0.color,
-                v1.pos.x, v1.pos.y, v1.pos.z, v1.color,
-                v2.pos.x, v2.pos.y, v2.pos.z, v2.color);
-        end
-    end
-
     // Triangle setup stage
     logic                    ts_out_valid;
     triangle_state_t         ts_out_state;

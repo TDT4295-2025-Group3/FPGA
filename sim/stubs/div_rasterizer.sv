@@ -2,9 +2,7 @@
 `default_nettype none
 
 module div_rasterizer #(
-    parameter int FRACTIONAL_WIDTH = 17,
-    // Set to 1 to drop the LSB of the 17-bit fraction so your logs match Vivado (0x10c vs 0x218)
-    parameter bit DROP_LSB_TO_MATCH_VIVADO = 0
+    parameter int FRACTIONAL_WIDTH = 16
 )(
     input  logic         aclk,
     input  logic         aresetn,
@@ -23,7 +21,7 @@ module div_rasterizer #(
     output logic         m_axis_dout_tvalid,
     input  logic         m_axis_dout_tready,
     output logic [0:0]   m_axis_dout_tuser,    // [0] = divide-by-zero
-    output logic [87:0]  m_axis_dout_tdata     // {7x sign, 81-bit signed Q}
+    output logic [87:0]  m_axis_dout_tdata
 );
 
     // -------------------------
@@ -79,13 +77,8 @@ module div_rasterizer #(
             end
         end
 
-        // Emit adjustment: drop the LSB to match Vivado-observed raw_div (Q64.16 effect)
-        if (DROP_LSB_TO_MATCH_VIVADO) begin
-            // arithmetic shift right by 1 preserves sign
-            calc_q_emit = calc_q >>> 1;
-        end else begin
-            calc_q_emit = calc_q;
-        end
+        // Result to emit is just the computed quotient
+        calc_q_emit = calc_q;
 
         // Truncate to 81-bit signed like the IP packing
         calc_out81 = calc_q_emit[80:0];
