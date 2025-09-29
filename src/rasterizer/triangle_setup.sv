@@ -35,10 +35,12 @@ module triangle_setup #(
     logic denom_neg_reg;
 
     // Divider interface signals
-    logic        div_valid, div_ready;
+    logic        div_valid;
+    logic        div_ready;
     logic [63:0] div_divisor, div_dividend;
     logic        div_out_valid;
     logic [86:0] div_out_data;
+    logic div_divisor_ready, div_dividend_ready;
 
     div_rasterizer div_inst (
         .aclk                    (clk),
@@ -46,11 +48,11 @@ module triangle_setup #(
 
         .s_axis_divisor_tdata    (div_divisor),
         .s_axis_divisor_tvalid   (div_valid),
-        .s_axis_divisor_tready   (div_ready),
+        .s_axis_divisor_tready   (div_divisor_ready),
 
         .s_axis_dividend_tdata   (div_dividend),
         .s_axis_dividend_tvalid  (div_valid),
-        .s_axis_dividend_tready  (div_ready),
+        .s_axis_dividend_tready  (div_dividend_ready),
 
         .m_axis_dout_tdata       (div_out_data),
         .m_axis_dout_tvalid      (div_out_valid),
@@ -59,6 +61,9 @@ module triangle_setup #(
 
         .m_axis_dout_tready      (1'b1) // Always ready to accept result
     );
+
+    // Combine ready signals
+    assign div_ready = div_divisor_ready & div_dividend_ready;
 
     // Output / status signals
     assign out_state = tri_reg;
