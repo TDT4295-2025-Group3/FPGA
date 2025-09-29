@@ -152,9 +152,9 @@ module pixel_eval #(
                                  (v_w * $unsigned(s3_reg.pixel.triangle.v1_color[3:0])) +
                                  (w_w * $unsigned(s3_reg.pixel.triangle.v2_color[3:0])) + 32'h0000_8000) >>> 16;
 
-            s4_next.depth       = ((u_w * s3_reg.pixel.triangle.v0_nextepth) +
-                                (v_w * s3_reg.pixel.triangle.v1_nextepth) +
-                                (w_w * s3_reg.pixel.triangle.v2_nextepth) + 32'h0000_8000) >>> 16;
+            s4_next.depth       = ((u_w * s3_reg.pixel.triangle.v0_depth) +
+                                (v_w * s3_reg.pixel.triangle.v1_depth) +
+                                (w_w * s3_reg.pixel.triangle.v2_depth) + 32'h0000_8000) >>> 16;
         end else begin
             s4_next.color = '0;
             s4_next.depth = '0;
