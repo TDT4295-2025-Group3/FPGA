@@ -26,21 +26,31 @@ module pixel_eval #(
 );
 
     // handshake
-    logic s1_ready, s2_ready, s3_ready, s4_ready, s5_ready;
+    logic s1_ready, s2_ready, s3_ready, s4_ready, s5w_ready, s5_ready;
     pixel_eval_stage1_t s1_reg, s1_next;
     pixel_eval_stage2_t s2_reg, s2_next;
     pixel_eval_stage3_t s3_reg, s3_next;
     pixel_eval_stage4_t s4_reg, s4_next;
     pixel_output_t      s5_reg, s5_next;
 
-    assign s1_ready = !s1_reg.valid || s2_ready;
-    assign s2_ready = !s2_reg.valid || s3_ready;
-    assign s3_ready = !s3_reg.valid || s4_ready;
-    assign s4_ready = !s4_reg.valid || s5_ready;
-    assign s5_ready = !s5_reg.valid || out_ready;
+    // Stage 4.5 weights
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        q16_16_t     u_w, v_w, w_w;      // Q16.16
+        logic        is_inside;
+    } pixel_eval_stage4p_t;
+    pixel_eval_stage4p_t s4p_reg, s4p_next;
+
+    assign s1_ready  = !s1_reg.valid  || s2_ready;
+    assign s2_ready  = !s2_reg.valid  || s3_ready;
+    assign s3_ready  = !s3_reg.valid  || s4_ready;
+    assign s4_ready  = !s4_reg.valid  || s5w_ready;
+    assign s5w_ready = !s4p_reg.valid || s5_ready;
+    assign s5_ready  = !s5_reg.valid  || out_ready;
 
     assign in_ready = s1_ready;
-    assign busy     = s1_reg.valid || s2_reg.valid || s3_reg.valid || s4_reg.valid || s5_reg.valid || out_valid;
+    assign busy     = s1_reg.valid || s2_reg.valid || s3_reg.valid || s4_reg.valid || s4p_reg.valid || s5_reg.valid || out_valid;
 
     // Stage 1
     always_comb begin
@@ -128,7 +138,7 @@ module pixel_eval #(
         end
     end
 
-    // Stage 5 comb: weights, interpolation
+    // Stage 4.5 comb: weights
     // abs numerators since denom_inv = 1/abs(denom)
     logic signed [75:0] v_num_abs, w_num_abs, u_num_abs; // Q64.12
     logic signed [93:0] v_mul, w_mul, u_mul;             // Q64.12 * Q0.16 = Q64.28
@@ -147,25 +157,43 @@ module pixel_eval #(
         w_w = q16_16_t'((w_mul + 28'd134217728) >>> 28);
         u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
 
-        s5_next.valid = s4_reg.valid & s4_reg.is_inside;
-        s5_next.pixel = s4_reg.pixel;
+        s4p_next.valid     = s4_reg.valid & s4_reg.is_inside;
+        s4p_next.pixel     = s4_reg.pixel;
+        s4p_next.u_w       = u_w;
+        s4p_next.v_w       = v_w;
+        s4p_next.w_w       = w_w;
+        s4p_next.is_inside = s4_reg.is_inside;
+    end
 
-        if (s4_reg.is_inside) begin
-            s5_next.color[11:8] = ((u_w * $unsigned(s4_reg.pixel.triangle.v0_color[11:8])) +
-                                   (v_w * $unsigned(s4_reg.pixel.triangle.v1_color[11:8])) +
-                                   (w_w * $unsigned(s4_reg.pixel.triangle.v2_color[11:8])) + 32'h0000_8000) >>> 16;
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            s4p_reg <= '0;
+        end else if (s5w_ready) begin
+            s4p_reg <= s4p_next;
+        end
+    end
 
-            s5_next.color[7:4]  = ((u_w * $unsigned(s4_reg.pixel.triangle.v0_color[7:4])) +
-                                   (v_w * $unsigned(s4_reg.pixel.triangle.v1_color[7:4])) +
-                                   (w_w * $unsigned(s4_reg.pixel.triangle.v2_color[7:4])) + 32'h0000_8000) >>> 16;
+    // Stage 5 comb: interpolation
+    always_comb begin
+        s5_next.valid = s4p_reg.valid;
+        s5_next.pixel = s4p_reg.pixel;
 
-            s5_next.color[3:0]  = ((u_w * $unsigned(s4_reg.pixel.triangle.v0_color[3:0])) +
-                                   (v_w * $unsigned(s4_reg.pixel.triangle.v1_color[3:0])) +
-                                   (w_w * $unsigned(s4_reg.pixel.triangle.v2_color[3:0])) + 32'h0000_8000) >>> 16;
+        if (s4p_reg.is_inside) begin
+            s5_next.color[11:8] = ((s4p_reg.u_w * $unsigned(s4p_reg.pixel.triangle.v0_color[11:8])) +
+                                   (s4p_reg.v_w * $unsigned(s4p_reg.pixel.triangle.v1_color[11:8])) +
+                                   (s4p_reg.w_w * $unsigned(s4p_reg.pixel.triangle.v2_color[11:8])) + 32'h0000_8000) >>> 16;
 
-            s5_next.depth       = ((u_w * s4_reg.pixel.triangle.v0_depth) +
-                                   (v_w * s4_reg.pixel.triangle.v1_depth) +
-                                   (w_w * s4_reg.pixel.triangle.v2_depth) + 32'h0000_8000) >>> 16;
+            s5_next.color[7:4]  = ((s4p_reg.u_w * $unsigned(s4p_reg.pixel.triangle.v0_color[7:4])) +
+                                   (s4p_reg.v_w * $unsigned(s4p_reg.pixel.triangle.v1_color[7:4])) +
+                                   (s4p_reg.w_w * $unsigned(s4p_reg.pixel.triangle.v2_color[7:4])) + 32'h0000_8000) >>> 16;
+
+            s5_next.color[3:0]  = ((s4p_reg.u_w * $unsigned(s4p_reg.pixel.triangle.v0_color[3:0])) +
+                                   (s4p_reg.v_w * $unsigned(s4p_reg.pixel.triangle.v1_color[3:0])) +
+                                   (s4p_reg.w_w * $unsigned(s4p_reg.pixel.triangle.v2_color[3:0])) + 32'h0000_8000) >>> 16;
+
+            s5_next.depth       = ((s4p_reg.u_w * s4p_reg.pixel.triangle.v0_depth) +
+                                   (s4p_reg.v_w * s4p_reg.pixel.triangle.v1_depth) +
+                                   (s4p_reg.w_w * s4p_reg.pixel.triangle.v2_depth) + 32'h0000_8000) >>> 16;
         end else begin
             s5_next.color = '0;
             s5_next.depth = '0;
@@ -199,3 +227,4 @@ module pixel_eval #(
     end
 
 endmodule
+    
