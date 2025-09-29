@@ -12,12 +12,10 @@ module pixel_eval #(
     input  wire logic clk,
     input  wire logic rst,
 
-    // From traversal stage
     input  wire pixel_state_t in_pixel,
     input  wire logic         in_valid,
     output wire logic         in_ready,
 
-    // Output to framebuffer / z-buffer
     output logic [15:0] out_x,
     output logic [15:0] out_y,
     output color12_t    out_color,
@@ -27,9 +25,6 @@ module pixel_eval #(
     output logic        busy
 );
 
-    // ----------------------------
-    // Pipeline control
-    // ----------------------------
     logic stage1_ready, stage2_ready;
     logic stage1_valid, stage2_valid;
     assign busy = stage1_valid || stage2_valid || out_valid;
@@ -38,18 +33,15 @@ module pixel_eval #(
     assign stage1_ready = !stage1_valid || stage2_ready;
     assign stage2_ready = !stage2_valid || out_ready;
 
-    // ----------------------------
-    // Stage 1: Edge/Bary Numerators
-    // ----------------------------
+    // Stage 1
     pixel_state_t stage1_pixel;
     logic signed [37:0] d20, d21;            // Q32.6
     logic signed [75:0] v_num, w_num, u_num; // Q64.12
     logic               stage1_inside;
 
-    // Sample at pixel center (x+0.5, y+0.5) → +4 in Q16.3
     logic signed [18:0] e2x, e2y;
-    assign e2x = {in_pixel.x, 3'b0} + 3'd4 - in_pixel.triangle.v0x;
-    assign e2y = {in_pixel.y, 3'b0} + 3'd4 - in_pixel.triangle.v0y;
+    assign e2x = {in_pixel.x, 3'b0} - in_pixel.triangle.v0x;
+    assign e2y = {in_pixel.y, 3'b0} - in_pixel.triangle.v0y;
 
     assign d20 = e2x * in_pixel.triangle.e0x + e2y * in_pixel.triangle.e0y;
     assign d21 = e2x * in_pixel.triangle.e1x + e2y * in_pixel.triangle.e1y;
@@ -57,13 +49,10 @@ module pixel_eval #(
     always_comb begin
         v_num = in_pixel.triangle.d11 * d20 - in_pixel.triangle.d01 * d21;
         w_num = in_pixel.triangle.d00 * d21 - in_pixel.triangle.d01 * d20;
-        u_num = (in_pixel.triangle.d00 * in_pixel.triangle.d11 -
-                 in_pixel.triangle.d01 * in_pixel.triangle.d01)
-                 - v_num - w_num;
+        u_num = (in_pixel.triangle.d00 * in_pixel.triangle.d11 - in_pixel.triangle.d01 * in_pixel.triangle.d01) - v_num - w_num;
         stage1_inside = (v_num >= 0 && w_num >= 0 && u_num >= 0);
     end
 
-    // Stage 1 registers
     logic               stage1_inside_r;
     logic signed [75:0] stage1_v_num, stage1_w_num, stage1_u_num;
     always_ff @(posedge clk or posedge rst) begin
@@ -86,9 +75,7 @@ module pixel_eval #(
         end
     end
 
-    // ----------------------------
-    // Stage 2 registers
-    // ----------------------------
+    // Stage 2
     pixel_state_t       stage2_pixel;
     logic               stage2_inside;
     logic signed [75:0] stage2_v_num, stage2_w_num, stage2_u_num;
@@ -113,9 +100,7 @@ module pixel_eval #(
         end
     end
 
-    // ----------------------------
-    // Barycentric weights (Q16.16)
-    // ----------------------------
+    // Barycentric interpolation
     q16_16_t u_w, v_w, w_w;
     logic signed [93:0] v_mul, w_mul, u_mul;
     always_comb begin
@@ -128,9 +113,6 @@ module pixel_eval #(
         u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
     end
 
-    // ----------------------------
-    // Final output registers
-    // ----------------------------
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             out_valid <= 1'b0;
