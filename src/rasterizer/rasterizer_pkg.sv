@@ -27,4 +27,30 @@ package rasterizer_pkg;
         triangle_state_t triangle;
     } pixel_state_t;
 
+    typedef struct packed {
+        logic valid;
+        pixel_state_t pixel;
+        logic signed [75:0] v_num, w_num, denom; // Q64.12
+    } pixel_eval_stage1_t;
+
+    typedef struct packed {
+        logic valid;
+        pixel_state_t pixel;
+        logic signed [75:0] v_num, w_num, u_num; // Q64.12
+    } pixel_eval_stage2_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        logic signed [75:0]  v_num, w_num, u_num; // Q64.12
+        logic is_inside;
+    } pixel_eval_stage3_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        color12_t    color;
+        q16_16_t     depth;
+    } pixel_output_t;
+ 
 endpackage
