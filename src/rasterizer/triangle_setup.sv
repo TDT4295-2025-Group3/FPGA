@@ -49,6 +49,11 @@ module triangle_setup #(
     logic div_busy;
     triangle_setup_stage5_t s5_hold;
 
+    // produce flags
+    logic produce_div;
+    logic produce_degen;
+    logic produce_any;
+
     // connections
     assign in_ready  = s1_ready;
     assign out_state = out_reg;
@@ -214,7 +219,7 @@ module triangle_setup #(
 
         s5_can_fire_div = s5_reg.valid && (s5_reg.div_divisor != 64'd0) && !div_busy && div_ready;
         s5_fire_div     = s5_can_fire_div;
-        s5_fire_degen   = s5_reg.valid && (s5_reg.div_divisor == 64'd0) && s6_ready;
+        s5_fire_degen   = s5_reg.valid && (s5_reg.div_divisor == 64'd0) && s6_ready && !div_out_valid;
     end
     always_ff @(posedge clk or posedge rst) begin
         if (rst) s5_reg <= '0;
@@ -229,6 +234,13 @@ module triangle_setup #(
     assign div_dividend = 64'd1 << 16; // Q0.16
     assign div_valid    = s5_fire_div;
 
+    // produce flags
+    always_comb begin
+        produce_div   = div_out_valid && s6_ready;
+        produce_degen = s5_fire_degen;
+        produce_any   = produce_div || produce_degen;
+    end
+
     // inflight + output
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
@@ -241,7 +253,8 @@ module triangle_setup #(
                 s5_hold  <= s5_reg;
                 div_busy <= 1'b1;
             end
-            if (s5_fire_degen && s6_ready) begin
+
+            if (produce_degen) begin
                 out_reg.v0x        <= s5_reg.v0x;
                 out_reg.v0y        <= s5_reg.v0y;
                 out_reg.e0x        <= s5_reg.e0x;
@@ -263,9 +276,8 @@ module triangle_setup #(
                 out_reg.v0_depth   <= s5_reg.v0_depth;
                 out_reg.v1_depth   <= s5_reg.v1_depth;
                 out_reg.v2_depth   <= s5_reg.v2_depth;
-                out_vld            <= 1'b1;
             end
-            if (div_out_valid && s6_ready) begin
+            if (produce_div) begin
                 out_reg.v0x        <= s5_hold.v0x;
                 out_reg.v0y        <= s5_hold.v0y;
                 out_reg.e0x        <= s5_hold.e0x;
@@ -275,7 +287,7 @@ module triangle_setup #(
                 out_reg.d00        <= s5_hold.d00;
                 out_reg.d01        <= s5_hold.d01;
                 out_reg.d11        <= s5_hold.d11;
-                out_reg.denom_inv  <= div_out_data[15:0]; // Q0.16
+                out_reg.denom_inv  <= div_out_data[15:0];
                 out_reg.denom_neg  <= s5_hold.denom_neg;
                 out_reg.bbox_min_x <= s5_hold.bbox_min_x;
                 out_reg.bbox_max_x <= s5_hold.bbox_max_x;
@@ -287,12 +299,10 @@ module triangle_setup #(
                 out_reg.v0_depth   <= s5_hold.v0_depth;
                 out_reg.v1_depth   <= s5_hold.v1_depth;
                 out_reg.v2_depth   <= s5_hold.v2_depth;
-                out_vld            <= 1'b1;
                 div_busy           <= 1'b0;
             end
-            if (out_vld && out_ready) begin
-                out_vld <= 1'b0;
-            end
+
+            out_vld <= (out_vld && !out_ready) || produce_any;
         end
     end
 
