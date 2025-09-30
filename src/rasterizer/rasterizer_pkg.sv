@@ -118,17 +118,4 @@ typedef struct packed {
 } pixel_output_t;
 
  
-     typedef struct packed {
-        logic valid;
-        logic signed [18:0] v0x, v0y;
-        logic signed [18:0] e0x, e0y;
-        logic signed [18:0] e1x, e1y;
-        logic signed [37:0] d00, d01, d11;
-        logic signed [75:0] p_a, p_b;            // d00*d11, d01*d01   Q64.12
-        logic [15:0]  bbox_min_x, bbox_max_x;
-        logic [15:0]  bbox_min_y, bbox_max_y;
-        color12_t     v0_color, v1_color, v2_color;
-        q16_16_t      v0_depth, v1_depth, v2_depth;
-    } triangle_setup_stage3p_t;
-    triangle_setup_stage3p_t s3p_reg, s3p_next;
 endpackage

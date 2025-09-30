@@ -26,15 +26,12 @@ module triangle_setup #(
 );
 
     // handshake
-    logic s1_ready, s2_ready, s3_ready, s3p_ready, s4_ready, s5_ready, s6_ready;
+    logic s1_ready, s2_ready, s3_ready, s4_ready, s5_ready, s6_ready;
     triangle_setup_stage1_t s1_reg, s1_next;
     triangle_setup_stage2_t s2_reg, s2_next;
     triangle_setup_stage3_t s3_reg, s3_next;
     triangle_setup_stage4_t s4_reg, s4_next;
     triangle_setup_stage5_t s5_reg, s5_next;
-
-    // Stage 3.5 products
-
 
     // divider
     logic        div_valid;
@@ -57,13 +54,12 @@ module triangle_setup #(
     assign out_state = out_reg;
     assign out_valid = out_vld;
     assign s6_ready  = !out_vld || out_ready;
-    assign busy      = s1_reg.valid || s2_reg.valid || s3_reg.valid || s3p_reg.valid || s4_reg.valid || s5_reg.valid || out_vld || div_busy;
+    assign busy      = s1_reg.valid || s2_reg.valid || s3_reg.valid || s4_reg.valid || s5_reg.valid || out_vld || div_busy;
 
     // stage readiness
     assign s1_ready = !s1_reg.valid || s2_ready;
     assign s2_ready = !s2_reg.valid || s3_ready;
-    assign s3_ready = !s3_reg.valid || s3p_ready;
-    assign s3p_ready= !s3p_reg.valid|| s4_ready;
+    assign s3_ready = !s3_reg.valid || s4_ready;
     assign s4_ready = !s4_reg.valid || s5_ready;
 
     // divider
@@ -162,55 +158,28 @@ module triangle_setup #(
         else if (s3_ready) s3_reg <= s3_next;
     end
 
-    // Stage 3.5 products
-    always_comb begin
-        s3p_next.valid      = s3_reg.valid;
-        s3p_next.v0x        = s3_reg.v0x;  s3p_next.v0y = s3_reg.v0y;
-        s3p_next.e0x        = s3_reg.e0x;  s3p_next.e0y = s3_reg.e0y;
-        s3p_next.e1x        = s3_reg.e1x;  s3p_next.e1y = s3_reg.e1y;
-        s3p_next.d00        = s3_reg.d00;
-        s3p_next.d01        = s3_reg.d01;
-        s3p_next.d11        = s3_reg.d11;
-        s3p_next.p_a        = s3_reg.d00 * s3_reg.d11; // Q64.12
-        s3p_next.p_b        = s3_reg.d01 * s3_reg.d01; // Q64.12
-        s3p_next.bbox_min_x = s3_reg.bbox_min_x;
-        s3p_next.bbox_max_x = s3_reg.bbox_max_x;
-        s3p_next.bbox_min_y = s3_reg.bbox_min_y;
-        s3p_next.bbox_max_y = s3_reg.bbox_max_y;
-        s3p_next.v0_color   = s3_reg.v0_color;
-        s3p_next.v1_color   = s3_reg.v1_color;
-        s3p_next.v2_color   = s3_reg.v2_color;
-        s3p_next.v0_depth   = s3_reg.v0_depth;
-        s3p_next.v1_depth   = s3_reg.v1_depth;
-        s3p_next.v2_depth   = s3_reg.v2_depth;
-    end
-    always_ff @(posedge clk or posedge rst) begin
-        if (rst) s3p_reg <= '0;
-        else if (s3p_ready) s3p_reg <= s3p_next;
-    end
-
     // Stage 4
     always_comb begin
-        logic signed [75:0] denom = s3p_reg.p_a - s3p_reg.p_b; // Q64.12
+        logic signed [75:0] denom = s3_reg.d00*s3_reg.d11 - s3_reg.d01*s3_reg.d01;
 
-        s4_next.valid      = s3p_reg.valid;
-        s4_next.v0x        = s3p_reg.v0x;  s4_next.v0y = s3p_reg.v0y;
-        s4_next.e0x        = s3p_reg.e0x;  s4_next.e0y = s3p_reg.e0y;
-        s4_next.e1x        = s3p_reg.e1x;  s4_next.e1y = s3p_reg.e1y;
-        s4_next.d00        = s3p_reg.d00;
-        s4_next.d01        = s3p_reg.d01;
-        s4_next.d11        = s3p_reg.d11;
+        s4_next.valid      = s3_reg.valid;
+        s4_next.v0x        = s3_reg.v0x;  s4_next.v0y = s3_reg.v0y;
+        s4_next.e0x        = s3_reg.e0x;  s4_next.e0y = s3_reg.e0y;
+        s4_next.e1x        = s3_reg.e1x;  s4_next.e1y = s3_reg.e1y;
+        s4_next.d00        = s3_reg.d00;
+        s4_next.d01        = s3_reg.d01;
+        s4_next.d11        = s3_reg.d11;
         s4_next.denom      = denom;
-        s4_next.bbox_min_x = s3p_reg.bbox_min_x;
-        s4_next.bbox_max_x = s3p_reg.bbox_max_x;
-        s4_next.bbox_min_y = s3p_reg.bbox_min_y;
-        s4_next.bbox_max_y = s3p_reg.bbox_max_y;
-        s4_next.v0_color   = s3p_reg.v0_color;
-        s4_next.v1_color   = s3p_reg.v1_color;
-        s4_next.v2_color   = s3p_reg.v2_color;
-        s4_next.v0_depth   = s3p_reg.v0_depth;
-        s4_next.v1_depth   = s3p_reg.v1_depth;
-        s4_next.v2_depth   = s3p_reg.v2_depth;
+        s4_next.bbox_min_x = s3_reg.bbox_min_x;
+        s4_next.bbox_max_x = s3_reg.bbox_max_x;
+        s4_next.bbox_min_y = s3_reg.bbox_min_y;
+        s4_next.bbox_max_y = s3_reg.bbox_max_y;
+        s4_next.v0_color   = s3_reg.v0_color;
+        s4_next.v1_color   = s3_reg.v1_color;
+        s4_next.v2_color   = s3_reg.v2_color;
+        s4_next.v0_depth   = s3_reg.v0_depth;
+        s4_next.v1_depth   = s3_reg.v1_depth;
+        s4_next.v2_depth   = s3_reg.v2_depth;
     end
     always_ff @(posedge clk or posedge rst) begin
         if (rst) s4_reg <= '0;
@@ -218,7 +187,7 @@ module triangle_setup #(
     end
 
     // Stage 5
-    logic        s5_can_fire_div, s5_fire_div, s5_fire_degen;
+    logic s5_can_fire_div, s5_fire_div, s5_fire_degen;
     always_comb begin
         logic [75:0] denom_abs          = s4_reg.denom[75] ? (~s4_reg.denom + 1) : s4_reg.denom;
         logic [75:0] denom_abs_rounded  = denom_abs + 76'd2048; // +0.5 ulp before >>12
@@ -252,6 +221,7 @@ module triangle_setup #(
         else if (!s5_reg.valid || s5_fire_div || s5_fire_degen) s5_reg <= s5_next;
     end
 
+    // s5 readiness
     assign s5_ready    = (!s5_reg.valid) || s5_fire_div || s5_fire_degen;
 
     // divider IO
