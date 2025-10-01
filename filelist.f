@@ -11,6 +11,6 @@ src/rasterizer/rasterizer.sv
 
 src/double_framebuffer.sv
 
-src/clock_480p.sv
+src/gfx_clocks.sv
 src/display_480p.sv
 src/top.sv
