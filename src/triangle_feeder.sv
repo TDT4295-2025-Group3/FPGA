@@ -14,20 +14,22 @@ module triangle_feeder #(
     output triangle_t out_tri
 );
 
-    // Memory of triangles
-    triangle_t tris [N_TRIS];
+    import vertex_pkg::*;
 
-    // Load at elaboration/simulation start
+    // Flattened storage (one entry = 324 bits)
+    logic [323:0] tri_mem [N_TRIS];
+
+    // Load at elaboration
     initial begin
-        $readmemh(MEMFILE, tris);
+        $readmemh(MEMFILE, tri_mem);
     end
 
-    // Feeder state
+    // Feed state
     logic [$clog2(N_TRIS)-1:0] idx;
     logic sending;
 
     assign busy    = sending;
-    assign out_tri = tris[idx];
+    assign out_tri = triangle_t'(tri_mem[idx]); // cast bits into struct
 
     always_ff @(posedge clk) begin
         if (rst) begin
