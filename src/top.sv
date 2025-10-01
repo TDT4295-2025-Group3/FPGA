@@ -13,6 +13,7 @@ module top (
 
     import math_pkg::*;
     import color_pkg::*;
+    import vertex_pkg::*;
 
     // ----------------------------------------------------------------
     // Clocks
@@ -43,9 +44,7 @@ module top (
         .vsync,
         .de,
         .frame,
-        /* verilator lint_off PINCONNECTEMPTY */
         .line(),
-        /* verilator lint_on PINCONNECTEMPTY */
         .sx,
         .sy
     );
@@ -101,8 +100,8 @@ module top (
         .FB_WIDTH (FB_WIDTH),
         .FB_HEIGHT(FB_HEIGHT)
     ) framebuffer_inst (
-        .clk_write(clk_render), // Renderer clock
-        .clk_read (clk_pix),    // VGA clock
+        .clk_write(clk_render),
+        .clk_read (clk_pix),
         .swap     (begin_frame),
         .rst      (!btn_rst_n),
 
@@ -117,60 +116,27 @@ module top (
     );
 
     // ----------------------------------------------------------------
-    // Test triangles
+    // Triangle feeder (memory based)
     // ----------------------------------------------------------------
-    localparam color12_t C0 = '{r:4'hF, g:4'h8, b:4'h0}; // orange
-    localparam color12_t C1 = '{r:4'h8, g:4'h0, b:4'h5}; // purple
-    localparam color12_t C2 = '{r:4'h0, g:4'h8, b:4'h8}; // teal
-    localparam color12_t C3 = '{r:4'hF, g:4'hF, b:4'h0}; // yellow
+    triangle_t feeder_tri;
+    logic feeder_valid, feeder_busy;
 
-    triangle_t tris [0:3];
-    always_ff @(posedge clk_render) begin
-        tris[0] <= '{'{pos: '{to_q16_16(25),  to_q16_16(40), to_q16_16(30)},  color: C0},
-                    '{pos: '{to_q16_16(50),  to_q16_16(90), to_q16_16(50)},  color: C1},
-                    '{pos: '{to_q16_16(100), to_q16_16(30), to_q16_16(75)},  color: C2}};
-        tris[1] <= '{'{pos: '{to_q16_16(60),  to_q16_16(20), to_q16_16(20)},  color: C1},
-                    '{pos: '{to_q16_16(120), to_q16_16(80), to_q16_16(60)},  color: C2},
-                    '{pos: '{to_q16_16(140), to_q16_16(10), to_q16_16(90)},  color: C3}};
-        tris[2] <= '{'{pos: '{to_q16_16(10),  to_q16_16(100), to_q16_16(10)}, color: C2},
-                    '{pos: '{to_q16_16(30),  to_q16_16(140), to_q16_16(30)}, color: C3},
-                    '{pos: '{to_q16_16(80),  to_q16_16(120), to_q16_16(50)}, color: C0}};
-        tris[3] <= '{'{pos: '{to_q16_16(90),  to_q16_16(60), to_q16_16(40)},  color: C3},
-                    '{pos: '{to_q16_16(130), to_q16_16(90), to_q16_16(70)},  color: C0},
-                    '{pos: '{to_q16_16(150), to_q16_16(130), to_q16_16(100)}, color: C1}};
-    end
+    triangle_feeder #(
+        .N_TRIS(4),
+        .MEMFILE("tris.mem")
+    ) feeder_inst (
+        .clk        (clk_render),
+        .rst        (!btn_rst_n),
+        .begin_frame(begin_frame),
+        .out_valid  (feeder_valid),
+        .out_ready  (renderer_ready),
+        .busy       (feeder_busy),
+        .out_tri    (feeder_tri)
+    );
 
     // ----------------------------------------------------------------
     // Triangle rasterization
     // ----------------------------------------------------------------
-    logic [1:0] tri_index;
-    logic       renderer_valid;
-    logic       sending;
-
-    always_ff @(posedge clk_render) begin
-        if (!btn_rst_n) begin
-            tri_index      <= '0;
-            renderer_valid <= 1'b0;
-            sending        <= 1'b0;
-        end else if (begin_frame) begin
-            tri_index      <= 2'd0;
-            renderer_valid <= 1'b1;
-            sending        <= 1'b1;
-            $display("New frame at time %0t", $time);
-        end else if (sending) begin
-            if (renderer_valid && renderer_ready) begin
-                $display("Starting rasterization of triangle %0d at time %0t", tri_index, $time);
-                if (tri_index == 2'd3) begin
-                    renderer_valid <= 1'b0;
-                    sending        <= 1'b0;
-                end else begin
-                    tri_index      <= tri_index + 2'd1;
-                    renderer_valid <= 1'b1;
-                end
-            end
-        end
-    end
-
     rasterizer #(
         .WIDTH (FB_WIDTH),
         .HEIGHT(FB_HEIGHT)
@@ -178,13 +144,13 @@ module top (
         .clk(clk_render),
         .rst(!btn_rst_n),
 
-        .in_valid(renderer_valid),
+        .in_valid(feeder_valid),
         .in_ready(renderer_ready),
         .busy    (renderer_busy),
 
-        .v0(tris[tri_index].v0),
-        .v1(tris[tri_index].v1),
-        .v2(tris[tri_index].v2),
+        .v0(feeder_tri.v0),
+        .v1(feeder_tri.v1),
+        .v2(feeder_tri.v2),
 
         .out_pixel_x(renderer_x),
         .out_pixel_y(renderer_y),

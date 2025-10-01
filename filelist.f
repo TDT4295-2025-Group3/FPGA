@@ -13,4 +13,5 @@ src/double_framebuffer.sv
 
 src/gfx_clocks.sv
 src/display_480p.sv
+src/triangle_feeder.sv
 src/top.sv
