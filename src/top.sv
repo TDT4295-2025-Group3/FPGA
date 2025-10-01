@@ -62,9 +62,24 @@ module top (
     // ----------------------------------------------------------------
     // Framebuffer
     // ----------------------------------------------------------------
-    logic [7:0]  fb_read_x = sx[9:2];
-    logic [6:0]  fb_read_y = sy[8:2];
+    localparam FB_WIDTH  = 160;
+    localparam FB_HEIGHT = 120;
+
+    logic [7:0]  fb_read_x;
+    logic [6:0]  fb_read_y;
     logic [11:0] fb_read_data;
+
+    always_ff @(posedge clk_pix) begin
+        if (sx < (FB_WIDTH << 2))
+            fb_read_x <= sx[9:2];
+        else
+            fb_read_x <= FB_WIDTH-1;
+
+        if (sy < (FB_HEIGHT << 2))
+            fb_read_y <= sy[8:2];
+        else
+            fb_read_y <= FB_HEIGHT-1;
+    end
 
     logic [7:0]  renderer_x;
     logic [6:0]  renderer_y;
@@ -81,9 +96,6 @@ module top (
         else
             begin_frame <= frame_start_render && !renderer_busy;
     end
-
-    localparam FB_WIDTH  = 160;
-    localparam FB_HEIGHT = 120;
 
     double_framebuffer #(
         .FB_WIDTH (FB_WIDTH),
@@ -185,12 +197,14 @@ module top (
     // ----------------------------------------------------------------
     // VGA output
     // ----------------------------------------------------------------
+    logic de_q;
     always_ff @(posedge clk_pix) begin
+        de_q      <= de;
         vga_hsync <= hsync;
         vga_vsync <= vsync;
-        vga_r     <= de ? fb_read_data[11:8] : 4'h0;
-        vga_g     <= de ? fb_read_data[7:4]  : 4'h0;
-        vga_b     <= de ? fb_read_data[3:0]  : 4'h0;
+        vga_r     <= de_q ? fb_read_data[11:8] : 4'h0;
+        vga_g     <= de_q ? fb_read_data[7:4]  : 4'h0;
+        vga_b     <= de_q ? fb_read_data[3:0]  : 4'h0;
     end
 
 endmodule
