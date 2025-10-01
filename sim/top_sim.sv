@@ -24,6 +24,6 @@ module top_sim (
     );
     
     // Connect to the internal pixel clock for simulation
-    // Note: You'll need to make clk_pix public in the top module
-    assign clk_pix = top_inst.clock_pix_inst.clk_pix;
+    assign clk_pix = top_inst.clocks_inst.clk_pix;
+
 endmodule
