@@ -231,48 +231,48 @@ module spi_driver #(
                 endcase
             end
         end
+    end
         
-        always_ff @(negedge sck) begin
-            if(!CS_n) begin
-                case(spi_state)
-                    CREATE_VERT_RESULT: begin
-                        if(bit_ctr == 7) begin 
-                            reg_o <= vert_id_out[bit_ctr];
-                            spi_state <= LOAD_OP;
-                        end else begin
-                            reg_o <= vert_id_out[bit_ctr];
-                            bit_ctr <= bit_ctr +1;
-                        end
-                    end  
-                    CREATE_TRI_RESULT: begin
-                        if(bit_ctr == 7) begin 
-                            reg_o <= tri_id_out[bit_ctr];
-                            spi_state <= STATUS_OUT;
-                        end else begin
-                            reg_o <= tri_id_out[bit_ctr];
-                            bit_ctr <= bit_ctr +1;
-                        end
-                    end  
-                    CREATE_INST_RESULT: begin
-                        if(bit_ctr == 7) begin 
-                            reg_o <= inst_id_out[bit_ctr];
-                            spi_state <= STATUS_OUT;
-                        end else begin
-                            reg_o <= inst_id_out[bit_ctr];
-                            bit_ctr <= bit_ctr +1;
-                        end
+    always_ff @(negedge sck) begin
+        if(!CS_n) begin
+            case(spi_state)
+                CREATE_VERT_RESULT: begin
+                    if(bit_ctr == 7) begin 
+                        reg_o <= vert_id_out[bit_ctr];
+                        spi_state <= LOAD_OP;
+                    end else begin
+                        reg_o <= vert_id_out[bit_ctr];
+                        bit_ctr <= bit_ctr +1;
                     end
-                    STATUS_OUT: begin
-                        if(bit_ctr == 3) begin 
-                            reg_o <= status[bit_ctr];
-                            spi_state <= LOAD_OP;
-                        end else begin
-                            reg_o <= status[bit_ctr];
-                            bit_ctr <= bit_ctr +1;
-                        end
+                end  
+                CREATE_TRI_RESULT: begin
+                    if(bit_ctr == 7) begin 
+                        reg_o <= tri_id_out[bit_ctr];
+                        spi_state <= STATUS_OUT;
+                    end else begin
+                        reg_o <= tri_id_out[bit_ctr];
+                        bit_ctr <= bit_ctr +1;
                     end
-                endcase
-            end
+                end  
+                CREATE_INST_RESULT: begin
+                    if(bit_ctr == 7) begin 
+                        reg_o <= inst_id_out[bit_ctr];
+                        spi_state <= STATUS_OUT;
+                    end else begin
+                        reg_o <= inst_id_out[bit_ctr];
+                        bit_ctr <= bit_ctr +1;
+                    end
+                end
+                STATUS_OUT: begin
+                    if(bit_ctr == 3) begin 
+                        reg_o <= status[bit_ctr];
+                        spi_state <= LOAD_OP;
+                    end else begin
+                        reg_o <= status[bit_ctr];
+                        bit_ctr <= bit_ctr +1;
+                    end
+                end
+            endcase
         end
     end
     

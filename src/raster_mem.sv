@@ -94,6 +94,8 @@ module raster_mem #(
     logic [$clog2(MAX_VERT)-1:0] curr_vert_base;
     logic [VIDX_W-1:0] curr_vert_count;
     logic [VIDX_W-1:0] vert_ctr;
+    logic [$clog2(MAX_VERT)-1:0] vert_ram_addr;
+    logic [VTX_W-1:0] vert_out_r;
     
     logic [$clog2(MAX_TRI)-1:0] curr_tri_base;
     logic [TIDX_W-1:0] curr_tri_count;
@@ -133,23 +135,22 @@ module raster_mem #(
             end
 
             case(state)
-                CREATE_VERT_HDR: begin
-                    if (vert_valid) begin
-                        vert_table[next_vert_id].base  <= vert_base;
-                        vert_table[next_vert_id].count <= vert_count;
-                        curr_vert_base  <= vert_base;
-                        curr_vert_count <= vert_count;
-                        vert_id_out <= next_vert_id;
-                        next_vert_id <= next_vert_id + 1;
-                        vert_ctr <= 0;
-                        state <= CREATE_VERT_DATA;
-                    end
+                CREATE_VERT_HDR: if (vert_valid) begin
+                    vert_table[next_vert_id].base  <= vert_base;
+                    vert_table[next_vert_id].count <= vert_count;
+                    curr_vert_base  <= vert_base;
+                    curr_vert_count <= vert_count;
+                    vert_id_out <= next_vert_id;
+                    next_vert_id <= next_vert_id + 1;
+                    vert_ctr <= 0;
+                    state <= CREATE_VERT_DATA;
                 end
                 
                 CREATE_VERT_DATA: begin
                     if (next_vert_valid && vert_ctr < curr_vert_count) begin
                         vertex_ram[curr_vert_base + vert_ctr] <= vert_in;
                         vert_ctr <= vert_ctr + 1;
+
                     end else if (vert_ctr == curr_vert_count) begin
                         status <= 4'b0000; // OK
                         state  <= IDLE;
@@ -158,18 +159,17 @@ module raster_mem #(
                         state  <= IDLE;
                     end
                 end
-                CREATE_TRI_HDR: begin
-                    if( tri_valid) begin
-                        tri_table[next_tri_id].base <= tri_base;
-                        tri_table[next_tri_id].count <= tri_count;
-                        curr_tri_base  <= tri_base;
-                        curr_tri_count <= tri_count;
-                        tri_id_out <= next_tri_id;
-                        next_tri_id <= next_tri_id + 1;
-                        tri_ctr <= 0;
-                        state   <= CREATE_TRI_DATA;
-                    end
+                CREATE_TRI_HDR: if (vert_valid) begin
+                    tri_table[next_tri_id].base <= tri_base;
+                    tri_table[next_tri_id].count <= tri_count;
+                    curr_tri_base  <= tri_base;
+                    curr_tri_count <= tri_count;
+                    tri_id_out  <= next_tri_id;
+                    next_tri_id <= next_tri_id + 1;
+                    tri_ctr <= 0;
+                    state   <= CREATE_TRI_DATA;
                 end
+                
                 CREATE_TRI_DATA: begin
                     if (next_tri_valid && tri_ctr < curr_tri_count) begin
                         tri_ram[curr_tri_base + tri_ctr][2] <= tri_in[3*VIDX_W-1:2*VIDX_W];
@@ -205,7 +205,7 @@ module raster_mem #(
     enum logic [2:0] {RC_IDLE, RC_FETCH_DESC, RC_STREAM_VERT, RC_STREAM_TRI} rc_state; // Rasterdizer controller state
     logic [2:0][VIDX_W-1:0] curr_tri; 
     
-    always_ff @(posedge clk or posedge rst) begin
+    always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
             rc_state <= RC_IDLE;
             tri_ctr    <= '0;
@@ -245,22 +245,25 @@ module raster_mem #(
                     vert_ctr  <= '0;
                     tri_ctr <= tri_ctr +1;
                     rc_state <= RC_STREAM_VERT;
+                    vert_ram_addr <= vert_base + tri_ram[curr_tri_base + tri_ctr];
                 end else
                     rc_state <= RC_IDLE;
                     
                 RC_STREAM_VERT: begin
-                    if(vert_ctr == 2)begin
-                        draw_valid <= 1;
+                    draw_valid <= 1;
+                    vert_out_r <= vertex_ram[vert_ram_addr];
+
+                    if(vert_ctr < 2)begin
+                        vert_ram_addr <= vert_base + curr_tri[vert_ctr +1];
+                        vert_ctr <= vert_ctr +1;
+                    end else if(vert_ctr == 2) begin
                         vert_ctr <= '0;
                         rc_state <= RC_STREAM_TRI;
-                        vert_out <= vertex_ram[curr_vert_base + curr_tri[vert_ctr]];
-                    end else if(vert_ctr < 2) begin
-                        draw_valid <= 1;
-                        vert_ctr <= vert_ctr +1;
-                        vert_out <= vertex_ram[curr_vert_base + curr_tri[vert_ctr]];
                     end
                 end
             endcase
         end   
     end
+    assign vert_out = vert_out_r;
+
 endmodule
