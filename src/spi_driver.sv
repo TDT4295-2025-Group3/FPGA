@@ -3,8 +3,8 @@
 import opcode_defs::*;
 
 module spi_driver #(
-    localparam MAX_VERT  = 5000,
-    localparam MAX_TRI   = 5000,
+    localparam MAX_VERT  = 8192,     // 2^13 bit = 8192,
+    localparam MAX_TRI   = 8192,     // 2^13 bit = 8192,
     localparam MAX_INST  = 256,      // Also used max vert and tri buffers
     localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
     localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
@@ -49,7 +49,7 @@ module spi_driver #(
     output logic [TIDX_W-1:0]             tri_count,
 
     // SPI link --> raster memory
-    output logic  inst_valid,
+    output logic  inst_valid, inst_id_valid,
     output logic [VIDX_W-1:0]  vert_id_out,
     output logic [TIDX_W-1:0]  tri_id_out,
     output logic [TRANS_W-1:0] transform_out,
@@ -101,6 +101,7 @@ module spi_driver #(
                         vert_bit_ctr <= 0;
                         tri_bit_ctr  <= 0;
                         inst_valid   <= 0;
+                        inst_id_valid <= 0;
                         next_vert_valid <= 0;
                         nbl_ctr  <= 0;
                         opcode <= {mosi_3, mosi_2, mosi_1, mosi_0};
@@ -214,6 +215,7 @@ module spi_driver #(
                         end else begin
                             inst_id_out <= {inst_id_out[7:4], mosi_3, mosi_2, mosi_1, mosi_0};
                             nbl_ctr    <= 0;
+                            inst_id_valid <= 1;
                             spi_state <= UPDATE_INST;
                         end
                     end
