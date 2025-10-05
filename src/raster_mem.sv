@@ -29,18 +29,15 @@ module raster_mem #(
     input  logic        opcode_valid,
     input  logic [3:0]  opcode,
 
-    input  logic [11:0] num_verts,
-    input  logic [11:0] num_tris,
-
-    input  logic  vert_valid,             // Opcode: Create vert chosen
-    input  logic  next_vert_valid,        // next vertex ready for buffer
+    input  logic  vert_hdr_valid,       // Opcode: Create vert chosen
+    input  logic  vert_valid,           // next vertex ready for buffer
     input  logic [VTX_W-1:0]   vert_in,
     input  logic [VIDX_W-1:0]  vert_id_in,
     input  logic [$clog2(MAX_VERT)-1:0]   vert_base,
     input  logic [VIDX_W-1:0]             vert_count,
 
+    input  logic  tri_hdr_valid,
     input  logic  tri_valid,
-    input  logic  next_tri_valid,
     input  logic [TRI_W-1:0]   tri_in,
     input  logic [TIDX_W-1:0]  tri_id_in,
     input  logic [$clog2(MAX_TRI)-1:0]    tri_base,
@@ -52,7 +49,7 @@ module raster_mem #(
     input  logic [INST_W-1:0]  inst_in,
     input  logic [7:0]  inst_id_in,
 
-    // FPGA → MCU
+    // Memory → SPI driver
     output logic [3:0]  status,
     
     // Memory → Frame driver
@@ -67,7 +64,7 @@ module raster_mem #(
     
     output logic [TRI_W-1:0] idx_tri_out,
     output vertex_t vert_out,
-    output inst_t inst_out
+    output transform_t tranform_out
     );
 
     // ---- Memories ----
@@ -244,7 +241,7 @@ module raster_mem #(
                     tri_we  <= 0;
                     inst_we <= 0;
                 end
-                CREATE_VERT_HDR: if (vert_valid) begin
+                CREATE_VERT_HDR: if (vert_hdr_valid) begin
                     vert_table[vert_id_in].base  <= vert_base;
                     vert_table[vert_id_in].count <= vert_count;
                     curr_vert_base  <= vert_base;
@@ -256,7 +253,7 @@ module raster_mem #(
                 
                 CREATE_VERT_DATA: begin
                     vert_we <= 0;
-                    if (next_vert_valid && vert_ctr < curr_vert_count) begin
+                    if (vert_valid && vert_ctr < curr_vert_count) begin
                         vert_din <= vert_in;
                         vert_we <= 1;
                         vert_addr_wr <= curr_tri_base + vert_ctr;
@@ -270,7 +267,7 @@ module raster_mem #(
                         state  <= IDLE;
                     end
                 end
-                CREATE_TRI_HDR: if (tri_valid) begin
+                CREATE_TRI_HDR: if (tri_hdr_valid) begin
                     tri_table[tri_id_in].base  <= tri_base;
                     tri_table[tri_id_in].count <= tri_count;
                     curr_tri_base  <= tri_base;
@@ -282,7 +279,7 @@ module raster_mem #(
                 
                 CREATE_TRI_DATA: begin
                     tri_we <= 0;
-                    if (next_tri_valid && tri_ctr < curr_tri_count) begin
+                    if (tri_valid && tri_ctr < curr_tri_count) begin
                         tri_din <= tri_in;
                         tri_we  <= 1;
                         tri_addr_wr <= curr_tri_base + tri_ctr;
@@ -319,7 +316,7 @@ module raster_mem #(
     
     inst_t inst_cast;
     assign inst_cast  = inst_t'(inst_dout_r);
-    assign inst_out    = inst_cast;
+    assign transform_out       = transform_t'(inst_dout_r[303 : 16]);
     assign curr_vert_base_out  = vert_table[inst_cast.vert_id].base;  
     assign curr_vert_count_out = vert_table[inst_cast.vert_id].count; 
     assign curr_tri_base_out   = tri_table[inst_cast.tri_id].base;

@@ -26,24 +26,21 @@ module spi_driver #(
     input  logic mosi_1,
     input  logic mosi_2,
     input  logic mosi_3,
-    input  logic miso,      // Master in, slave out
+    output logic miso,      // Master in, slave out
     input  logic CS_n,      // Chip select, active low
     
     // SPI packet interface (already de-serialized by SPI front-end)
     output logic        opcode_valid,
     output logic [3:0]  opcode,
 
-    output logic [11:0] num_verts,
-    output logic [11:0] num_tris,
-
-    output logic  vert_valid,             // Opcode: Create vert chosen
-    output logic  next_vert_valid,        // next vertex ready for buffer
+    output logic  vert_hdr_valid,    // Opcode: Create vert chosen
+    output logic  vert_valid,        // next vertex ready for buffer
     output logic [VTX_W-1:0] vert_out,
     output logic [$clog2(MAX_VERT)-1:0]   vert_base,
     output logic [VIDX_W-1:0]             vert_count,
 
+    output logic  tri_hdr_valid,
     output logic  tri_valid,
-    output logic  next_tri_valid,
     output logic [TRI_W-1:0] tri_out,
     output logic [$clog2(MAX_TRI)-1:0]    tri_base,
     output logic [TIDX_W-1:0]             tri_count,
@@ -55,26 +52,20 @@ module spi_driver #(
     output logic [TRANS_W-1:0] transform_out,
     output logic [7:0] inst_id_out,
     
-    // FPGA memory → MCU
-    input  logic [3:0]  status,
-    input  logic [VIDX_W-1:0]  vert_id_in,
-    input  logic [TIDX_W-1:0]  tri_id_in,
-    input  logic [7:0]  inst_id_in
+    // Memory → SPI driver
+    input  logic [3:0]  status
     );
     
     // SPI buffer resources
-    logic [$clog2(MAX_VERT)-1:0] vert_base_ctr;
-    logic [$clog2(MAX_TRI)-1:0]  tri_base_ctr;
     logic [3:0] bit_ctr;                            // need to count up to staus (4) or IDs (8)
-    logic [7:0] next_inst_id;
-    logic reg_o;
+    (*keep="true"*) logic [7:0] next_inst_id;       // force keep due to synth optimization
+    logic miso_r;
         
     logic [3:0] nybble;
-    logic [$clog2(VTX_W/4):0] nbl_ctr;            // Nybble counter, need to be able to count to 108 bit
-    logic [$clog2(VTX_W)-1:0] vert_bit_ctr;
-    logic [$clog2(TRI_W)-1:0] tri_bit_ctr;
+    logic [$clog2(VTX_W/4):0] nbl_ctr;   // Nybble counter, need to be able to count to 108 bit
     logic [$clog2(MAX_VERT)-1:0] vert_ctr;
     logic [$clog2(MAX_TRI)-1:0]  tri_ctr;
+    logic mosi_flag;
     
     enum logic [3:0] {
     IDLE, LOAD_OP, WIPE_ALL, STATUS_OUT,
@@ -86,23 +77,21 @@ module spi_driver #(
     always_ff @(posedge sck) begin
         opcode_valid <= 0;
         if(rst) begin
-            vert_base_ctr <= 0;
             vert_ctr      <= 0;
-            tri_base_ctr  <= 0;
             tri_ctr       <= 0;
             nbl_ctr       <= 0;
-            reg_o         <= 0;
             next_inst_id  <= 1; // 0 reserved for camera
             spi_state <= LOAD_OP;
         end else begin 
             if(!CS_n) begin
                 case(spi_state)
                     LOAD_OP: begin
-                        vert_bit_ctr <= 0;
-                        tri_bit_ctr  <= 0;
+                        vert_valid <= 0;
+                        tri_valid  <= 0;
+                        vert_hdr_valid <= 0;
+                        tri_hdr_valid  <= 0;
                         inst_valid   <= 0;
                         inst_id_valid <= 0;
-                        next_vert_valid <= 0;
                         nbl_ctr  <= 0;
                         opcode <= {mosi_3, mosi_2, mosi_1, mosi_0};
                         opcode_valid <= 1;
@@ -122,8 +111,9 @@ module spi_driver #(
                         end else if (nbl_ctr == VIDX_W/4-1) begin
                             vert_count <= {vert_count[VIDX_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
                             vert_base  <= vert_base + {vert_count[VIDX_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
-                            spi_state  <= CREATE_VERT;
+                            vert_hdr_valid <= 1;
                             nbl_ctr    <= 0;
+                            spi_state  <= CREATE_VERT;
                         end
                     end
                     
@@ -131,7 +121,7 @@ module spi_driver #(
                         // Check if all nybbles are loaded
                         if(nbl_ctr == (VTX_W/4)-1) begin
                             vert_out  <= {vert_out[VTX_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
-                            next_vert_valid <= 1; // Next vertex ready for loading
+                            vert_valid <= 1; // Next vertex ready for loading
                             nbl_ctr   <= 0;
                             
                             // Check if we have all vetice for the buffer
@@ -145,7 +135,7 @@ module spi_driver #(
                         // Sift vertex and increment counter
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
-                            next_vert_valid <= 0;
+                            vert_valid <= 0;
                             vert_out <= {vert_out[VTX_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
                         end
                     end
@@ -158,8 +148,9 @@ module spi_driver #(
                         end else if (nbl_ctr == TIDX_W/4-1) begin
                             tri_count <= {tri_count[TIDX_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
                             tri_base  <= tri_base + {tri_count[TIDX_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
-                            spi_state  <= CREATE_TRI;
+                            tri_hdr_valid <= 1;
                             nbl_ctr    <= 0;
+                            spi_state  <= CREATE_TRI;
                         end
                     end
                     
@@ -167,7 +158,7 @@ module spi_driver #(
                     CREATE_TRI: begin
                         if (nbl_ctr == (TRI_W/4)-1) begin
                             tri_out <= {tri_out[TRI_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
-                            next_tri_valid <= 1;
+                            tri_valid <= 1;
                             nbl_ctr <= 0;
                     
                             if (tri_ctr == tri_count-1) begin 
@@ -179,7 +170,7 @@ module spi_driver #(
                             
                         end else begin
                             nbl_ctr <= nbl_ctr + 1;
-                            next_tri_valid <= 1;
+                            tri_valid <= 0;
                             tri_out <= {tri_out[TRI_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
                         end
                     end
@@ -230,54 +221,70 @@ module spi_driver #(
                             transform_out <= {transform_out[TRANS_W-1:4], mosi_3, mosi_2, mosi_1, mosi_0};
                         end
                     end
+
+                    CREATE_VERT_RESULT,
+                    CREATE_TRI_RESULT,
+                    CREATE_INST_RESULT: begin
+                        vert_valid <= 0;
+                        tri_valid  <= 0;
+                        inst_valid <= 0;
+                        if(mosi_flag)
+                            spi_state <= STATUS_OUT;
+                    end
+
+                    STATUS_OUT: begin
+                        if(mosi_flag)  
+                            spi_state <= LOAD_OP;
+                    end
                 endcase
             end
         end
     end
         
     always_ff @(negedge sck) begin
-        if(!CS_n) begin
-            case(spi_state)
+        if (rst) begin
+            miso_r  <= 0;
+            bit_ctr <= 0;
+            mosi_flag <= 0;
+        end else if (!CS_n) begin
+            mosi_flag <= 0; // default
+
+            case (spi_state)
                 CREATE_VERT_RESULT: begin
-                    if(bit_ctr == 7) begin 
-                        reg_o <= vert_id_out[bit_ctr];
-                        spi_state <= LOAD_OP;
-                    end else begin
-                        reg_o <= vert_id_out[bit_ctr];
-                        bit_ctr <= bit_ctr +1;
-                    end
-                end  
-                CREATE_TRI_RESULT: begin
-                    if(bit_ctr == 7) begin 
-                        reg_o <= tri_id_out[bit_ctr];
-                        spi_state <= STATUS_OUT;
-                    end else begin
-                        reg_o <= tri_id_out[bit_ctr];
-                        bit_ctr <= bit_ctr +1;
-                    end
-                end  
-                CREATE_INST_RESULT: begin
-                    if(bit_ctr == 7) begin 
-                        reg_o <= inst_id_out[bit_ctr];
-                        spi_state <= STATUS_OUT;
-                    end else begin
-                        reg_o <= inst_id_out[bit_ctr];
-                        bit_ctr <= bit_ctr +1;
-                    end
+                    miso_r <= vert_id_out[bit_ctr];
+                    if (bit_ctr == 7) begin
+                        bit_ctr <= 0;
+                        mosi_flag <= 1; // signal done to posedge FSM
+                    end else bit_ctr <= bit_ctr + 1;
                 end
+
+                CREATE_TRI_RESULT: begin
+                    miso_r <= tri_id_out[bit_ctr];
+                    if (bit_ctr == 7) begin
+                        bit_ctr <= 0;
+                        mosi_flag <= 1;
+                    end else bit_ctr <= bit_ctr + 1;
+                end
+
+                CREATE_INST_RESULT: begin
+                    miso_r <= inst_id_out[bit_ctr];
+                    if (bit_ctr == 7) begin
+                        bit_ctr <= 0;
+                        mosi_flag <= 1;
+                    end else bit_ctr <= bit_ctr + 1;
+                end
+
                 STATUS_OUT: begin
-                    if(bit_ctr == 3) begin 
-                        reg_o <= status[bit_ctr];
-                        spi_state <= LOAD_OP;
-                    end else begin
-                        reg_o <= status[bit_ctr];
-                        bit_ctr <= bit_ctr +1;
-                    end
+                    miso_r <= status[bit_ctr];
+                    if (bit_ctr == 3) begin
+                        bit_ctr <= 0;
+                        mosi_flag <= 1;
+                    end else bit_ctr <= bit_ctr + 1;
                 end
             endcase
         end
     end
-    
-    assign miso = reg_o;
+
+    assign miso = miso_r;
     
 endmodule
