@@ -4,15 +4,16 @@
 module triangle_feeder #(
     parameter int N_TRIS   = 4,
     parameter string MEMFILE = "tris.mem"
-) (
-    input  logic      clk,
-    input  logic      rst,
-    input  logic      begin_frame,
-    output logic      out_valid,
-    input  logic      out_ready,
-    output logic      busy,
-    output triangle_t out_tri
+)(
+    input  wire logic        clk,
+    input  wire logic        rst,
+    input  wire logic        begin_frame,
+    input  wire logic        out_ready,
+    output      logic        out_valid,
+    output      logic        busy,
+    output      triangle_t   out_tri
 );
+
 
     import vertex_pkg::*;
 

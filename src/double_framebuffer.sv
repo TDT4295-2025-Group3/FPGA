@@ -86,14 +86,19 @@ module double_framebuffer #(
         .WRITE_MODE_B("read_first")     
     ) framebufferA (
         .clka(clk_write),
+        .rsta(1'b0),
         .ena(1'b1),
         .wea(write_enable && (fb_write_select == FB_A)),
         .addra(write_addr),
         .dina(write_data),
+        .injectsbiterra(1'b0),
+        .injectdbiterra(1'b0),
         .clkb(clk_read),
+        .rstb(1'b0), 
         .enb(1'b1),
         .addrb(read_addr),
-        .doutb(read_data_A)
+        .doutb(read_data_A),
+        .sleep(1'b0)
     );
 
     // Framebuffer B (BRAM)
@@ -109,14 +114,19 @@ module double_framebuffer #(
         .WRITE_MODE_B("read_first")
     ) framebufferB (
         .clka(clk_write),
+        .rsta(1'b0),
         .ena(1'b1),
         .wea(write_enable && (fb_write_select == FB_B)),
         .addra(write_addr),
         .dina(write_data),
+        .injectsbiterra(1'b0),
+        .injectdbiterra(1'b0),
         .clkb(clk_read),
+        .rstb(1'b0),
         .enb(1'b1),
         .addrb(read_addr),
-        .doutb(read_data_B)
+        .doutb(read_data_B),
+        .sleep(1'b0)   
     );
 
     always_ff @(posedge clk_read) begin

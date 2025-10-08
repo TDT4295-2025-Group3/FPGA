@@ -24,10 +24,10 @@ module tb_top;
     .btn_rst_n(btn_rst_n)
   );
 
-  // Simulation runtime
-  initial begin
-    #100_000_000;
-    $finish;
-  end
+  // // Simulation runtime
+  // initial begin
+  //   #100_000_000;
+  //   $finish;
+  // end
 
 endmodule

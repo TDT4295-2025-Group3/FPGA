@@ -66,20 +66,26 @@ module top (
 
     logic [7:0]  fb_read_x;
     logic [6:0]  fb_read_y;
+
     logic [11:0] fb_read_data;
 
-    always_ff @(posedge clk_pix) begin
-        if (sx < (FB_WIDTH << 2))
-            fb_read_x <= sx[9:2];
-        else
-            fb_read_x <= FB_WIDTH-1;
+    always_ff @(posedge clk_pix or negedge btn_rst_n) begin
+        if (!btn_rst_n) begin
+            fb_read_x <= 8'd0;
+            fb_read_y <= 7'd0;
+        end else begin
+            if (sx < (FB_WIDTH << 2))
+                fb_read_x <= sx[9:2];
+            else
+                fb_read_x <= FB_WIDTH-1;
 
-        if (sy < (FB_HEIGHT << 2))
-            fb_read_y <= sy[8:2];
-        else
-            fb_read_y <= FB_HEIGHT-1;
+            if (sy < (FB_HEIGHT << 2))
+                fb_read_y <= sy[8:2];
+            else
+                fb_read_y <= FB_HEIGHT-1;
+        end
     end
-
+    
     logic [7:0]  renderer_x;
     logic [6:0]  renderer_y;
     q16_16_t     renderer_depth;
@@ -89,7 +95,7 @@ module top (
     logic        renderer_busy;
 
     logic begin_frame;
-    always_ff @(posedge clk_render) begin
+    always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
             begin_frame <= 1'b0;
         else
@@ -122,7 +128,7 @@ module top (
     logic feeder_valid, feeder_busy;
 
     triangle_feeder #(
-        .N_TRIS(4),
+        .N_TRIS(968),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),

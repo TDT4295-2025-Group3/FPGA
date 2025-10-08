@@ -56,6 +56,15 @@ if {[file exists ../src/rasterizer/div_rasterizer/div_rasterizer.xci]} {
 }
 
 # ---------------------------------------------------
+# Add tris.mem
+if {[file exists ../src/tris.mem]} {
+    puts "Reading memory file: ../src/tris.mem"
+    read_mem ../src/tris.mem
+} else {
+    puts "WARNING: tris.mem not found!"
+}
+
+# ---------------------------------------------------
 # Add constraints
 if {[file exists ../constraints/arty.xdc]} {
     puts "Reading constraints: ../constraints/arty.xdc"

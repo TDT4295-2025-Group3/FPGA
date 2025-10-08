@@ -6,7 +6,7 @@
 file mkdir build
 cd build
 
-# Project name and top module
+# Project name and top module for synthesis
 set proj_name "vga_rasterizer"
 set top_name "top"
 set part_name "xc7a35ticsg324-1L"
@@ -50,6 +50,16 @@ if {[file exists ../src/rasterizer/div_rasterizer/div_rasterizer.xci]} {
 }
 
 # ---------------------------------------------------
+# Add tris.mem
+if {[file exists ../src/tris.mem]} {
+    puts "Adding memory file: ../src/tris.mem"
+    add_files -norecurse ../src/tris.mem
+    set_property file_type {Memory Initialization Files} [get_files ../src/tris.mem]
+} else {
+    puts "WARNING: tris.mem not found!"
+}
+
+# ---------------------------------------------------
 # Constraints
 if {[file exists ../constraints/arty.xdc]} {
     puts "Adding constraints: ../constraints/arty.xdc"
@@ -59,8 +69,18 @@ if {[file exists ../constraints/arty.xdc]} {
 }
 
 # ---------------------------------------------------
-# Set top module
+# Set synthesis/implementation top module
 set_property top $top_name [current_fileset]
+
+# ---------------------------------------------------
+# Add testbench for simulation
+if {[file exists ../tb/tb_top.sv]} {
+    puts "Adding testbench: ../tb/tb_top.sv"
+    add_files -fileset sim_1 ../tb/tb_top.sv
+    set_property top tb_top [get_filesets sim_1]
+} else {
+    puts "WARNING: Testbench ../tb/tb_top.sv not found!"
+}
 
 # ---------------------------------------------------
 # Launch runs
