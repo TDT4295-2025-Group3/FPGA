@@ -127,6 +127,22 @@ module top (
     triangle_t feeder_tri;
     logic feeder_valid, feeder_busy;
 
+    logic[10:0] offset_x, offset_y;
+
+    always_ff @(posedge clk_render or negedge btn_rst_n) begin
+        if (!btn_rst_n)
+
+            offset_x <= 11'd80; // Centered
+        else if (begin_frame)
+            offset_x <= offset_x + 11'd1;
+
+        offset_y <= 11'd0; // Fixed
+    end
+
+
+
+
+
     triangle_feeder #(
         .N_TRIS(968),
         .MEMFILE("tris.mem")
@@ -136,6 +152,8 @@ module top (
         .begin_frame(begin_frame),
         .out_valid  (feeder_valid),
         .out_ready  (renderer_ready),
+        .offset_x   (offset_x),
+        .offset_y   (offset_y),
         .busy       (feeder_busy),
         .out_tri    (feeder_tri)
     );
