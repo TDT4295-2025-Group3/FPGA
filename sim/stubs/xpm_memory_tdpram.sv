@@ -18,11 +18,16 @@ module xpm_memory_tdpram #(
     input  wire                      wea,
     input  wire [ADDR_WIDTH_A-1:0]   addra,
     input  wire [WRITE_DATA_WIDTH_A-1:0] dina,
+    input  wire                      rsta,
+    input  wire                      injectsbiterra,
+    input  wire                      injectdbiterra,
 
     // Port B: read
     input  wire                      clkb,
     input  wire                      enb,
     input  wire [ADDR_WIDTH_B-1:0]   addrb,
+    input  wire                      rstb,
+    input  wire                      sleep,
     output logic [READ_DATA_WIDTH_B-1:0] doutb
 );
 
