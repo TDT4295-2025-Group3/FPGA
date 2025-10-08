@@ -127,16 +127,24 @@ module top (
     triangle_t feeder_tri;
     logic feeder_valid, feeder_busy;
 
-    logic[10:0] offset_x, offset_y;
+    q16_16_t offset_x, offset_y;
+    // Offset X: sweep from -FB_WIDTH/2 to +FB_WIDTH/2 in q16.16 format
+    always_ff @(posedge clk_render or negedge btn_rst_n) begin
+        if (!btn_rst_n)
+            offset_x <= -($signed(FB_WIDTH) <<< 15); // -FB_WIDTH/2 in q16.16
+        else if (begin_frame) begin
+            if (offset_x >= ($signed(FB_WIDTH) <<< 15)) // +FB_WIDTH/2 in q16.16
+                offset_x <= -($signed(FB_WIDTH) <<< 15);
+            else
+                offset_x <= offset_x + (32'sd1 <<< 15);
+        end
+    end
 
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
-
-            offset_x <= 11'd80; // Centered
-        else if (begin_frame)
-            offset_x <= offset_x + 11'd1;
-
-        offset_y <= 11'd0; // Fixed
+            offset_y <= 11'd0; // Fixed
+        else
+            offset_y <= 11'd0; // Fixed
     end
 
 

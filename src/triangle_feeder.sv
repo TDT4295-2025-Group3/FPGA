@@ -9,8 +9,8 @@ module triangle_feeder #(
     input  wire logic        rst,
     input  wire logic        begin_frame,
     input  wire logic        out_ready,
-    input  wire logic[10:0] offset_x,
-    input  wire logic[10:0] offset_y,
+    input  wire q16_16_t offset_x,
+    input  wire q16_16_t offset_y,
     output      logic        out_valid,
     output      logic        busy,
     output      triangle_t   out_tri
@@ -38,16 +38,16 @@ module triangle_feeder #(
         if (rst) begin
             out_tri <= '0;
         end else begin
-            out_tri.v0.pos.x <= tri_comb.v0.pos.x + (offset_x << 16);     
-            out_tri.v0.pos.y <= tri_comb.v0.pos.y + (offset_y << 16);     
+            out_tri.v0.pos.x <= tri_comb.v0.pos.x + offset_x;     
+            out_tri.v0.pos.y <= tri_comb.v0.pos.y + offset_y;     
             out_tri.v0.pos.z <= tri_comb.v0.pos.z;     
             out_tri.v0.color <= tri_comb.v0.color;
-            out_tri.v1.pos.x <= tri_comb.v1.pos.x + (offset_x << 16);     
-            out_tri.v1.pos.y <= tri_comb.v1.pos.y + (offset_y << 16);     
+            out_tri.v1.pos.x <= tri_comb.v1.pos.x + offset_x;     
+            out_tri.v1.pos.y <= tri_comb.v1.pos.y + offset_y;     
             out_tri.v1.pos.z <= tri_comb.v1.pos.z;     
             out_tri.v1.color <= tri_comb.v1.color;
-            out_tri.v2.pos.x <= tri_comb.v2.pos.x + (offset_x << 16);     
-            out_tri.v2.pos.y <= tri_comb.v2.pos.y + (offset_y << 16);     
+            out_tri.v2.pos.x <= tri_comb.v2.pos.x + offset_x;     
+            out_tri.v2.pos.y <= tri_comb.v2.pos.y + offset_y;     
             out_tri.v2.pos.z <= tri_comb.v2.pos.z;     
             out_tri.v2.color <= tri_comb.v2.color;
         end
