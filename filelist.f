@@ -9,6 +9,9 @@ src/renderer/rasterizer/pixel_traversal.sv
 src/renderer/rasterizer/pixel_eval.sv
 src/renderer/rasterizer/rasterizer.sv
 
+src/renderer/screen_filler.sv
+src/renderer/render_manager.sv
+
 src/double_framebuffer.sv
 
 src/gfx_clocks.sv

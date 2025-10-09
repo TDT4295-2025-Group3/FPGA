@@ -86,13 +86,14 @@ module top (
         end
     end
     
-    logic [7:0]  renderer_x;
-    logic [6:0]  renderer_y;
-    q16_16_t     renderer_depth;
-    logic        renderer_we;
-    logic [11:0] renderer_color;
-    logic        renderer_ready;
-    logic        renderer_busy;
+    // Render outputs (now driven by render_manager)
+    logic  [7:0]  renderer_x;
+    logic  [6:0]  renderer_y;
+    q16_16_t      renderer_depth;
+    logic         renderer_we;
+    logic [11:0]  renderer_color;
+    logic         renderer_ready;
+    logic         renderer_busy;
 
     logic begin_frame;
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
@@ -147,10 +148,6 @@ module top (
             offset_y <= 11'd0; // Fixed
     end
 
-
-
-
-
     triangle_feeder #(
         .N_TRIS(968),
         .MEMFILE("tris.mem")
@@ -159,7 +156,7 @@ module top (
         .rst        (!btn_rst_n),
         .begin_frame(begin_frame),
         .out_valid  (feeder_valid),
-        .out_ready  (renderer_ready),
+        .out_ready  (renderer_ready), // from render_manager now
         .offset_x   (offset_x),
         .offset_y   (offset_y),
         .busy       (feeder_busy),
@@ -167,30 +164,53 @@ module top (
     );
 
     // ----------------------------------------------------------------
-    // Triangle rasterization
+    // Render manager (clear + triangles)
     // ----------------------------------------------------------------
-    rasterizer #(
+    logic [15:0] rm_x16, rm_y16;
+    q16_16_t     rm_depth;
+    logic [11:0] rm_color;
+    logic        rm_use_depth;
+    logic        rm_out_valid;
+
+    // Choose your clear color here (e.g., black)
+    localparam color12_t CLEAR_COLOR = 12'h000;
+
+    render_manager #(
         .WIDTH (FB_WIDTH),
         .HEIGHT(FB_HEIGHT)
-    ) rasterizer_inst (
-        .clk(clk_render),
-        .rst(!btn_rst_n),
+    ) render_mgr_inst (
+        .clk              (clk_render),
+        .rst              (!btn_rst_n),
 
-        .in_valid(feeder_valid),
-        .in_ready(renderer_ready),
-        .busy    (renderer_busy),
+        .begin_frame      (frame_start_render),
 
-        .v0(feeder_tri.v0),
-        .v1(feeder_tri.v1),
-        .v2(feeder_tri.v2),
+        // Triangle path from feeder
+        .triangle         (feeder_tri),
+        .triangle_valid   (feeder_valid),
+        .triangle_ready   (renderer_ready),
 
-        .out_pixel_x(renderer_x),
-        .out_pixel_y(renderer_y),
-        .out_depth  (renderer_depth),
-        .out_color  (renderer_color),
-        .out_valid  (renderer_we),
-        .out_ready  (1'b1)
+        // Fill configuration (constant color, always valid)
+        .fill_color       (CLEAR_COLOR),
+        .fill_valid       (1'b1),
+        .fill_ready       (/* unused */),
+
+        // Unified render outputs
+        .out_pixel_x      (rm_x16),
+        .out_pixel_y      (rm_y16),
+        .out_depth        (rm_depth),
+        .out_color        (rm_color),
+        .out_compare_depth(rm_use_depth),
+        .out_valid        (rm_out_valid),
+        .out_ready        (1'b1),          // framebuffer write is always ready
+        .busy             (renderer_busy)
     );
+
+    // Downsize manager coords to FB address widths
+    assign renderer_x     = rm_x16[7:0];
+    assign renderer_y     = rm_y16[6:0];
+    assign renderer_color = rm_color;
+    assign renderer_we    = rm_out_valid;
+    assign renderer_depth = rm_depth; // not used by framebuffer, but kept for completeness
 
     // ----------------------------------------------------------------
     // VGA output
