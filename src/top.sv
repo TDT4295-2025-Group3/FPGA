@@ -172,8 +172,8 @@ module top (
     logic        rm_use_depth;
     logic        rm_out_valid;
 
-    // Choose your clear color here (e.g., black)
-    localparam color12_t CLEAR_COLOR = 12'h000;
+    // Choose your clear color here 
+    localparam color12_t CLEAR_COLOR = 12'h9d5;
 
     render_manager #(
         .WIDTH (FB_WIDTH),
