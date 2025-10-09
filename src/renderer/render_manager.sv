@@ -76,6 +76,7 @@ module render_manager #(
                     $display("Render Manager: Switching to FILL state");
                 end
             end
+            default: next_state = FILL;
         endcase
     end
 
