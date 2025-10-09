@@ -40,9 +40,9 @@ read_verilog -library xpm $::env(XILINX_VIVADO)/data/ip/xpm/xpm_memory/hdl/xpm_m
 
 # ---------------------------------------------------
 # Add generated IPs
-if {[file exists ../src/rasterizer/div_rasterizer/div_rasterizer.xci]} {
+if {[file exists ../src/renderer/rasterizer/div_rasterizer/div_rasterizer.xci]} {
     puts "Adding IP: div_rasterizer"
-    read_ip ../src/rasterizer/div_rasterizer/div_rasterizer.xci
+    read_ip ../src/renderer/rasterizer/div_rasterizer/div_rasterizer.xci
     upgrade_ip [get_ips div_rasterizer]
     generate_target {synthesis implementation simulation} [get_ips div_rasterizer]
 } else {
