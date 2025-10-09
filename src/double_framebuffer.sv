@@ -22,19 +22,19 @@ module double_framebuffer #(
     output logic [11:0]      read_data
 );
 
-    localparam int FB_DEPTH = FB_WIDTH * FB_HEIGHT;
-    localparam int ADDR_WIDTH = $clog2(FB_DEPTH);
+    localparam int FB_DEPTH    = FB_WIDTH * FB_HEIGHT;
+    localparam int ADDR_WIDTH  = $clog2(FB_DEPTH);
 
     logic [ADDR_WIDTH-1:0] write_addr, read_addr;
     assign write_addr = write_y * FB_WIDTH + write_x;
     assign read_addr  = read_y * FB_WIDTH + read_x;
 
-    // Buffer selection enums
+    // Buffer selection logic
     typedef enum logic {FB_A, FB_B} fb_select_t;
     fb_select_t fb_write_select;
-    fb_select_t fb_read_select; 
+    fb_select_t fb_read_select;
 
-    // One-bit signal for crossing (0 = FB_A, 1 = FB_B)
+    // One-bit cross-domain signal
     logic fb_read_sel_wr;
     logic fb_read_sel_rd;
 
@@ -70,64 +70,31 @@ module double_framebuffer #(
             fb_read_select <= (fb_read_sel_rd ? FB_B : FB_A);
     end
 
+    // Framebuffer A
+    logic [11:0] framebufferA [0:FB_DEPTH-1];
+    logic [11:0] read_data_A;
 
-    logic [11:0] read_data_A, read_data_B;
+    always_ff @(posedge clk_write) begin
+        if (write_enable && (fb_write_select == FB_A))
+            framebufferA[write_addr] <= write_data;
+    end
 
-    // Framebuffer A (BRAM)
-    xpm_memory_tdpram #(
-        .MEMORY_SIZE(FB_DEPTH * 12),   
-        .MEMORY_PRIMITIVE("block"),
-        .CLOCKING_MODE("independent_clock"),
-        .WRITE_DATA_WIDTH_A(12),
-        .READ_DATA_WIDTH_B(12),
-        .ADDR_WIDTH_A(ADDR_WIDTH),
-        .ADDR_WIDTH_B(ADDR_WIDTH),
-        .READ_LATENCY_B(1),             
-        .WRITE_MODE_B("read_first")     
-    ) framebufferA (
-        .clka(clk_write),
-        .rsta(1'b0),
-        .ena(1'b1),
-        .wea(write_enable && (fb_write_select == FB_A)),
-        .addra(write_addr),
-        .dina(write_data),
-        .injectsbiterra(1'b0),
-        .injectdbiterra(1'b0),
-        .clkb(clk_read),
-        .rstb(1'b0), 
-        .enb(1'b1),
-        .addrb(read_addr),
-        .doutb(read_data_A),
-        .sleep(1'b0)
-    );
+    always_ff @(posedge clk_read) begin
+        read_data_A <= framebufferA[read_addr];
+    end
 
-    // Framebuffer B (BRAM)
-    xpm_memory_tdpram #(
-        .MEMORY_SIZE(FB_DEPTH * 12),
-        .MEMORY_PRIMITIVE("block"),
-        .CLOCKING_MODE("independent_clock"),
-        .WRITE_DATA_WIDTH_A(12),
-        .READ_DATA_WIDTH_B(12),
-        .ADDR_WIDTH_A(ADDR_WIDTH),
-        .ADDR_WIDTH_B(ADDR_WIDTH),
-        .READ_LATENCY_B(1),
-        .WRITE_MODE_B("read_first")
-    ) framebufferB (
-        .clka(clk_write),
-        .rsta(1'b0),
-        .ena(1'b1),
-        .wea(write_enable && (fb_write_select == FB_B)),
-        .addra(write_addr),
-        .dina(write_data),
-        .injectsbiterra(1'b0),
-        .injectdbiterra(1'b0),
-        .clkb(clk_read),
-        .rstb(1'b0),
-        .enb(1'b1),
-        .addrb(read_addr),
-        .doutb(read_data_B),
-        .sleep(1'b0)   
-    );
+    // Framebuffer B
+    logic [11:0] framebufferB [0:FB_DEPTH-1];
+    logic [11:0] read_data_B;
+
+    always_ff @(posedge clk_write) begin
+        if (write_enable && (fb_write_select == FB_B))
+            framebufferB[write_addr] <= write_data;
+    end
+
+    always_ff @(posedge clk_read) begin
+        read_data_B <= framebufferB[read_addr];
+    end
 
     always_ff @(posedge clk_read) begin
         read_data <= (fb_read_select == FB_A) ? read_data_A : read_data_B;
