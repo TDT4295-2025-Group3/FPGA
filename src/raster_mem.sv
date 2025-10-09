@@ -2,24 +2,25 @@
 `default_nettype wire
 import buffer_id_pkg::*;
 import vertex_pkg::*;
+import transform_pkg::*;
 
 
 module raster_mem #(
-    localparam MAX_VERT  = 256,      // 2^13 bit = 8192
-    localparam MAX_TRI   = 256,      // 2^13 bit = 8192
-    localparam MAX_INST  = 256,      // maximum model instances
-    localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
-    localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
+    parameter MAX_VERT  = 256,      // 2^13 bit = 8192
+    parameter MAX_TRI   = 256,      // 2^13 bit = 8192
+    parameter MAX_INST  = 256,      // maximum model instances
+    parameter MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
+    parameter MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
     
-    localparam MAX_VERT_CNT = 256,             // max vertices per buffer
-    localparam MAX_TRI_CNT = 256,              // max triangles per buffer
-    localparam VTX_W     = 108,                // 3*32 + 3*4 bits (spec)
-    localparam VIDX_W = $clog2(MAX_VERT_CNT), 
-    localparam TIDX_W = $clog2(MAX_TRI_CNT),   
-    localparam TRI_W     = 3*VIDX_W,           // 3*8 bits. Might want to increase for safety 3*12 bits
-    localparam DATA_W    = 32,
-    localparam TRANS_W   = DATA_W * 9,         // 9 floats
-    localparam INST_W    = DATA_W * 9 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)  // 9 floats + vert/tri id
+    parameter MAX_VERT_CNT = 256,             // max vertices per buffer
+    parameter MAX_TRI_CNT = 256,              // max triangles per buffer
+    parameter VTX_W     = 108,                // 3*32 + 3*4 bits (spec)
+    parameter VIDX_W = $clog2(MAX_VERT_CNT), 
+    parameter TIDX_W = $clog2(MAX_TRI_CNT),   
+    parameter TRI_W     = 3*VIDX_W,           // 3*8 bits. Might want to increase for safety 3*12 bits
+    parameter DATA_W    = 32,
+    parameter TRANS_W   = DATA_W * 9,         // 9 floats
+    parameter INST_W    = DATA_W * 9 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)  // 9 floats + vert/tri id
 )(
     input  logic        clk,
     input  logic        rst,
@@ -64,7 +65,7 @@ module raster_mem #(
     
     output logic [TRI_W-1:0] idx_tri_out,
     output vertex_t vert_out,
-    output transform_t tranform_out
+    output transform_t transform_out
     );
 
     // ---- Memories ----
