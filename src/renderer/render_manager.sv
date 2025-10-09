@@ -81,10 +81,10 @@ module render_manager #(
     end
 
     assign triangle_ready = (state == TRIANGLE) ? rasterizer_in_ready : 1'b0;
-    assign busy = (state == FILL) ? screen_filler_busy : rasterizer_busy;
+    assign busy = (state != TRIANGLE) ? screen_filler_busy : rasterizer_busy;
 
     always_comb begin
-        if (state == FILL) begin
+        if (state != TRIANGLE) begin
             out_pixel_x      = screen_filler_x;
             out_pixel_y      = screen_filler_y;
             out_depth        = screen_filler_depth;
