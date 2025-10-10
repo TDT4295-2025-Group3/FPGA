@@ -15,6 +15,14 @@ package math_pkg;
         return val >>> 16;
     endfunction
 
+    function automatic int q16_16_floor(input logic signed [31:0] val);
+        return $signed(val) >>> 16;
+    endfunction
+
+function automatic int q16_16_ceil(input logic signed [31:0] val);
+    logic signed [31:0] tmp = val + 32'sh0000_FFFF;
+    return tmp >>> 16;
+endfunction
 
     typedef struct packed {
         q16_16_t x;

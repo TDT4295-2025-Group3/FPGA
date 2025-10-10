@@ -89,10 +89,10 @@ module triangle_setup #(
         s1_next.v0         = v0;
         s1_next.v1         = v1;
         s1_next.v2         = v2;
-        s1_next.bbox_min_x = clamp(min3(v0.pos.x, v1.pos.x, v2.pos.x) >>> 16, 0, WIDTH-1);
-        s1_next.bbox_max_x = clamp((max3(v0.pos.x, v1.pos.x, v2.pos.x) + 32'hFFFF) >>> 16, 0, WIDTH-1);
-        s1_next.bbox_min_y = clamp(min3(v0.pos.y, v1.pos.y, v2.pos.y) >>> 16, 0, HEIGHT-1);
-        s1_next.bbox_max_y = clamp((max3(v0.pos.y, v1.pos.y, v2.pos.y) + 32'hFFFF) >>> 16, 0, HEIGHT-1);
+        s1_next.bbox_min_x = clamp(q16_16_floor(min3(v0.pos.x, v1.pos.x, v2.pos.x)), 0, WIDTH-1);
+        s1_next.bbox_max_x = clamp(q16_16_ceil(max3(v0.pos.x, v1.pos.x, v2.pos.x)),  0, WIDTH-1);
+        s1_next.bbox_min_y = clamp(q16_16_floor(min3(v0.pos.y, v1.pos.y, v2.pos.y)), 0, HEIGHT-1);
+        s1_next.bbox_max_y = clamp(q16_16_ceil(max3(v0.pos.y, v1.pos.y, v2.pos.y)),  0, HEIGHT-1);
     end
     always_ff @(posedge clk or posedge rst) begin
         if (rst) s1_reg <= '0;
