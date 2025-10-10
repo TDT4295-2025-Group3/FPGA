@@ -5,7 +5,7 @@
 
 const int WIDTH = 640;
 const int HEIGHT = 480;
-const int OFFSET_X = 144;
+const int OFFSET_X = 145;
 const int OFFSET_Y = 34;
 
 void waitForSpacePressAndRelease()
