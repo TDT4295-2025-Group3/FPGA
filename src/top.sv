@@ -86,14 +86,16 @@ module top (
         end
     end
     
-    // Render outputs (now driven by render_manager)
-    logic  [7:0]  renderer_x;
-    logic  [6:0]  renderer_y;
-    q16_16_t      renderer_depth;
-    logic         renderer_we;
-    logic [11:0]  renderer_color;
-    logic         renderer_ready;
-    logic         renderer_busy;
+    // ----------------------------------------------------------------
+    // Renderer outputs (render_manager -> depthbuffer)
+    // ----------------------------------------------------------------
+    logic [15:0] rm_x16, rm_y16;
+    q16_16_t     rm_depth;
+    logic [11:0] rm_color;
+    logic        rm_use_depth;
+    logic        rm_out_valid;
+    logic        renderer_busy;
+    logic        renderer_ready;
 
     logic begin_frame;
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
@@ -103,25 +105,6 @@ module top (
             begin_frame <= frame_start_render && !renderer_busy;
     end
 
-    double_framebuffer #(
-        .FB_WIDTH (FB_WIDTH),
-        .FB_HEIGHT(FB_HEIGHT)
-    ) framebuffer_inst (
-        .clk_write(clk_render),
-        .clk_read (clk_pix),
-        .swap     (begin_frame),
-        .rst      (!btn_rst_n),
-
-        .write_enable(renderer_we),
-        .write_x     (renderer_x),
-        .write_y     (renderer_y),
-        .write_data  (renderer_color),
-
-        .read_x(fb_read_x),
-        .read_y(fb_read_y),
-        .read_data(fb_read_data)
-    );
-
     // ----------------------------------------------------------------
     // Triangle feeder (memory based)
     // ----------------------------------------------------------------
@@ -129,12 +112,11 @@ module top (
     logic feeder_valid, feeder_busy;
 
     q16_16_t offset_x, offset_y;
-    // Offset X: sweep from -FB_WIDTH/2 to +FB_WIDTH/2 in q16.16 format
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
-            offset_x <= -($signed(FB_WIDTH) <<< 15); // -FB_WIDTH/2 in q16.16
+            offset_x <= -($signed(FB_WIDTH) <<< 15);
         else if (begin_frame) begin
-            if (offset_x >= ($signed(FB_WIDTH) <<< 15)) // +FB_WIDTH/2 in q16.16
+            if (offset_x >= ($signed(FB_WIDTH) <<< 15))
                 offset_x <= -($signed(FB_WIDTH) <<< 15);
             else
                 offset_x <= offset_x + (32'sd1 <<< 15);
@@ -143,9 +125,9 @@ module top (
 
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
-            offset_y <= 11'd0; // Fixed
+            offset_y <= 11'd0;
         else
-            offset_y <= 11'd0; // Fixed
+            offset_y <= 11'd0;
     end
 
     triangle_feeder #(
@@ -156,7 +138,7 @@ module top (
         .rst        (!btn_rst_n),
         .begin_frame(begin_frame),
         .out_valid  (feeder_valid),
-        .out_ready  (renderer_ready), // from render_manager now
+        .out_ready  (renderer_ready),
         .offset_x   (offset_x),
         .offset_y   (offset_y),
         .busy       (feeder_busy),
@@ -166,13 +148,6 @@ module top (
     // ----------------------------------------------------------------
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
-    logic [15:0] rm_x16, rm_y16;
-    q16_16_t     rm_depth;
-    logic [11:0] rm_color;
-    logic        rm_use_depth;
-    logic        rm_out_valid;
-
-    // Choose your clear color here 
     localparam color12_t CLEAR_COLOR = 12'h9d5;
 
     render_manager #(
@@ -184,33 +159,72 @@ module top (
 
         .begin_frame      (frame_start_render),
 
-        // Triangle path from feeder
         .triangle         (feeder_tri),
         .triangle_valid   (feeder_valid),
         .triangle_ready   (renderer_ready),
 
-        // Fill configuration (constant color, always valid)
         .fill_color       (CLEAR_COLOR),
         .fill_valid       (1'b1),
         .fill_ready       (/* unused */),
 
-        // Unified render outputs
         .out_pixel_x      (rm_x16),
         .out_pixel_y      (rm_y16),
         .out_depth        (rm_depth),
         .out_color        (rm_color),
         .out_compare_depth(rm_use_depth),
         .out_valid        (rm_out_valid),
-        .out_ready        (1'b1),          // framebuffer write is always ready
+        .out_ready        (1'b1),
         .busy             (renderer_busy)
     );
 
-    // Downsize manager coords to FB address widths
-    assign renderer_x     = rm_x16[7:0];
-    assign renderer_y     = rm_y16[6:0];
-    assign renderer_color = rm_color;
-    assign renderer_we    = rm_out_valid;
-    assign renderer_depth = rm_depth; // not used by framebuffer, but kept for completeness
+    // ----------------------------------------------------------------
+    // Depth buffer (inserted here)
+    // ----------------------------------------------------------------
+    logic [15:0] db_out_x, db_out_y;
+    logic [11:0] db_out_color;
+    logic        db_out_valid;
+
+    depthbuffer #(
+        .FB_WIDTH (FB_WIDTH),
+        .FB_HEIGHT(FB_HEIGHT)
+    ) depthbuffer_inst (
+        .clk             (clk_render),
+        .rst             (!btn_rst_n),
+
+        .in_valid        (rm_out_valid),
+        .in_compare_depth(rm_use_depth),
+        .in_color        (rm_color),
+        .in_depth        (rm_depth),
+        .in_x            (rm_x16),
+        .in_y            (rm_y16),
+
+        .out_valid       (db_out_valid),
+        .out_color       (db_out_color),
+        .out_x           (db_out_x),
+        .out_y           (db_out_y)
+    );
+
+    // ----------------------------------------------------------------
+    // Framebuffer (now fed from depthbuffer)
+    // ----------------------------------------------------------------
+    double_framebuffer #(
+        .FB_WIDTH (FB_WIDTH),
+        .FB_HEIGHT(FB_HEIGHT)
+    ) framebuffer_inst (
+        .clk_write(clk_render),
+        .clk_read (clk_pix),
+        .swap     (begin_frame),
+        .rst      (!btn_rst_n),
+
+        .write_enable(db_out_valid),
+        .write_x     (db_out_x[7:0]),
+        .write_y     (db_out_y[6:0]),
+        .write_data  (db_out_color),
+
+        .read_x(fb_read_x),
+        .read_y(fb_read_y),
+        .read_data(fb_read_data)
+    );
 
     // ----------------------------------------------------------------
     // VGA output
