@@ -76,6 +76,12 @@ if {[file exists ../constraints/arty.xdc]} {
 # ---------------------------------------------------
 # Full Flow
 puts "Starting synthesis..."
+
+# --- Added optimization flags ---
+set_param synth.elaboration.rodinMoreOptions "rt::set_parameter flatten_hierarchy full"
+set_param synth.elaboration.rodinMoreOptions "rt::set_parameter retiming true"
+# --------------------------------
+
 synth_design -top "top" -part "xc7a35ticsg324-1L"
 
 report_timing_summary -file post_synth_timing_summary.rpt

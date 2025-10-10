@@ -85,6 +85,12 @@ if {[file exists ../tb/tb_top.sv]} {
 # ---------------------------------------------------
 # Launch runs
 puts "Starting synthesis..."
+
+# --- Added optimization flags ---
+set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY full [get_runs synth_1]
+set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING true [get_runs synth_1]
+# --------------------------------
+
 launch_runs synth_1 -jobs 8
 wait_on_run synth_1
 
@@ -99,5 +105,3 @@ wait_on_run impl_1
 open_run impl_1
 report_timing_summary -file ${proj_name}_timing_impl.rpt
 report_utilization    -file ${proj_name}_util_impl.rpt
-
-# ---------------------------------------------------

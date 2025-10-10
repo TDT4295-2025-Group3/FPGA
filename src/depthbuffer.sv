@@ -1,6 +1,7 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
+import math_pkg::*;
 import color_pkg::color12_t;
 
 module depthbuffer #(
@@ -25,20 +26,24 @@ module depthbuffer #(
     localparam int FB_DEPTH    = FB_WIDTH * FB_HEIGHT;
     localparam int ADDR_WIDTH  = $clog2(FB_DEPTH);
 
-    logic [ADDR_WIDTH-1:0] addr;
-    assign addr = in_y * FB_WIDTH + in_x;
-
+    logic [ADDR_WIDTH-1:0] addr, addr_reg;
     logic [31:0] depth_mem [0:FB_DEPTH-1];
     logic [31:0] depth_read;
-
     logic passed_depth_test;
 
+    // --- Pipeline stage 1: address computation ---
     always_ff @(posedge clk) begin
-        depth_read <= depth_mem[addr];
+        addr_reg <= in_y * FB_WIDTH + in_x;
+    end
+
+    // --- Pipeline stage 2: synchronous BRAM read ---
+    always_ff @(posedge clk) begin
+        depth_read <= depth_mem[addr_reg];
     end
 
     assign passed_depth_test = (in_compare_depth == 1'b0) || (in_depth < depth_read);
 
+    // --- Pipeline stage 3: comparison + writeback ---
     always_ff @(posedge clk) begin
         if (rst) begin
             out_valid <= 1'b0;
@@ -51,7 +56,7 @@ module depthbuffer #(
                 out_color <= in_color;
                 out_x     <= in_x;
                 out_y     <= in_y;
-                depth_mem[addr] <= in_depth;
+                depth_mem[addr_reg] <= in_depth;
             end else begin
                 out_valid <= 1'b0;
                 out_color <= 12'b0;
