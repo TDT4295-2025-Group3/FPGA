@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
 `default_nettype wire
 import opcode_defs::*;
+import vertex_pkg::*;
 
 module spi_driver #(
     parameter MAX_VERT  = 8192,     // 2^13 bit = 8192,
@@ -22,12 +23,9 @@ module spi_driver #(
     // SPI interface pins
     input  logic sck,       // Serial clock
     input  logic rst,
-    input  logic mosi_0,    // Maser out, slave in 1 through 4
-    input  logic mosi_1,
-    input  logic mosi_2,
-    input  logic mosi_3,
-    output logic miso,      // Master in, slave out
-    input  logic CS_n,      // Chip select, active low
+    input  logic [3:0] mosi,    // Maser out, slave in 1 through 4
+    output logic miso,          // Master in, slave out
+    input  logic CS_n,          // Chip select, active low
     
     // SPI packet interface (already de-serialized by SPI front-end)
     output logic        opcode_valid,
@@ -35,7 +33,7 @@ module spi_driver #(
 
     output logic  vert_hdr_valid,    // Opcode: Create vert chosen
     output logic  vert_valid,        // next vertex ready for buffer
-    output logic [VTX_W-1:0] vert_out,
+    output vertex_t vert_out,
     output logic [$clog2(MAX_VERT)-1:0]   vert_base,
     output logic [VIDX_W-1:0]             vert_count,
 
@@ -65,6 +63,9 @@ module spi_driver #(
     logic [$clog2(TRANS_W/4):0] nbl_ctr;   // Nybble counter, need to be able to count to 288 bit
     logic [$clog2(MAX_VERT)-1:0] vert_ctr;
     logic [$clog2(MAX_TRI)-1:0]  tri_ctr;
+    logic [$clog2(MAX_VERT)-1:0]   next_vert_base;
+    logic [$clog2(MAX_VERT)-1:0]   next_tri_base;
+    logic [VTX_W-1:0] vert_r;
     logic mosi_flag;
     
     enum logic [3:0] {
@@ -83,6 +84,8 @@ module spi_driver #(
             next_inst_id  <= 1; // 0 reserved for camera
             next_vert_id  <= 0;
             next_tri_id   <= 0;
+            next_vert_base <= 0;
+            next_tri_base  <= 0;
             vert_base     <= 0;
             tri_base      <= 0;
             spi_state <= LOAD_OP;
@@ -97,12 +100,12 @@ module spi_driver #(
                         inst_valid   <= 0;
                         inst_id_valid <= 0;
                         nbl_ctr  <= 0;
-                        opcode <= {mosi_3, mosi_2, mosi_1, mosi_0};
+                        opcode <= mosi;
                         opcode_valid <= 1;
-                        if(OP_CREATE_VERT == {mosi_3, mosi_2, mosi_1, mosi_0}) spi_state <= LOAD_VERT_COUNT;
-                        else if(OP_CREATE_TRI  == {mosi_3, mosi_2, mosi_1, mosi_0}) spi_state <= LOAD_TRI_COUNT;
-                        else if(OP_CREATE_INST == {mosi_3, mosi_2, mosi_1, mosi_0}) spi_state <= LOAD_INST_DATA;
-                        else if(OP_UPDATE_INST == {mosi_3, mosi_2, mosi_1, mosi_0}) spi_state <= LOAD_UPDATE_INST;
+                        if(OP_CREATE_VERT == mosi) spi_state <= LOAD_VERT_COUNT;
+                        else if(OP_CREATE_TRI  == mosi) spi_state <= LOAD_TRI_COUNT;
+                        else if(OP_CREATE_INST == mosi) spi_state <= LOAD_INST_DATA;
+                        else if(OP_UPDATE_INST == mosi) spi_state <= LOAD_UPDATE_INST;
                         else begin
                             opcode_valid <= 0;
                         end
@@ -110,11 +113,16 @@ module spi_driver #(
                     
                     LOAD_VERT_COUNT: begin
                         if(nbl_ctr < VIDX_W/4-1) begin
-                            vert_count <= {vert_count[VIDX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            vert_count <= {vert_count[VIDX_W-5:0], mosi};
                             nbl_ctr   <= nbl_ctr +1;
                         end else if (nbl_ctr == VIDX_W/4-1) begin
-                            vert_count <= {vert_count[VIDX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
-                            vert_base  <= vert_base + {vert_count[VIDX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            vert_id_out <= next_vert_id;
+                            next_vert_id <= next_vert_id + 1;
+                            
+                            vert_count <= {vert_count[VIDX_W-5:0], mosi};
+                            next_vert_base  <= vert_base + {vert_count[VIDX_W-5:0], mosi};
+                            vert_base  <= next_vert_base;
+                            
                             vert_hdr_valid <= 1;
                             nbl_ctr    <= 0;
                             spi_state  <= CREATE_VERT;
@@ -124,7 +132,7 @@ module spi_driver #(
                     CREATE_VERT: begin
                         // Check if all nybbles are loaded
                         if(nbl_ctr == (VTX_W/4)-1) begin
-                            vert_out  <= {vert_out[VTX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            vert_out  <= {vert_out[VTX_W-5:0], mosi};
                             vert_valid <= 1; // Next vertex ready for loading
                             nbl_ctr   <= 0;
                             
@@ -132,28 +140,30 @@ module spi_driver #(
                             if(vert_ctr ==  vert_count-1) begin
                                 spi_state <= CREATE_VERT_RESULT;
                                 vert_ctr <= 0;      
-                                vert_id_out <= next_vert_id;
-                                next_vert_id <= next_vert_id + 1;
                             end else begin
                                 vert_ctr <= vert_ctr +1;
                             end
-                            
                         // Sift vertex and increment counter
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
                             vert_valid <= 0;
-                            vert_out <= {vert_out[VTX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            vert_out <= {vert_out[VTX_W-5:0], mosi};
                         end
                     end
                     
                     
                     LOAD_TRI_COUNT: begin
                         if(nbl_ctr < TIDX_W/4-1) begin
-                            tri_count <= {tri_count[TIDX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            tri_count <= {tri_count[TIDX_W-5:0], mosi};
                             nbl_ctr   <= nbl_ctr +1;
-                        end else if (nbl_ctr == TIDX_W/4-1) begin
-                            tri_count <= {tri_count[TIDX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
-                            tri_base  <= tri_base + {tri_count[TIDX_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                        end else if (nbl_ctr == TIDX_W/4-1) begin                            
+                            tri_id_out <= next_tri_id;
+                            next_tri_id <= next_tri_id + 1;
+                            
+                            tri_count <= {tri_count[TIDX_W-5:0], mosi};
+                            next_tri_base  <= tri_base + {tri_count[TIDX_W-5:0], mosi};
+                            tri_base <= next_tri_base;
+                            
                             tri_hdr_valid <= 1;
                             nbl_ctr    <= 0;
                             spi_state  <= CREATE_TRI;
@@ -163,15 +173,13 @@ module spi_driver #(
                     
                     CREATE_TRI: begin
                         if (nbl_ctr == (TRI_W/4)-1) begin
-                            tri_out <= {tri_out[TRI_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            tri_out <= {tri_out[TRI_W-5:0], mosi};
                             tri_valid <= 1;
                             nbl_ctr <= 0;
                     
                             if (tri_ctr == tri_count-1) begin 
                                 spi_state <= CREATE_TRI_RESULT;
-                                tri_ctr <= 0;                            
-                                tri_id_out <= next_tri_id;
-                                next_tri_id <= next_tri_id + 1;
+                                tri_ctr <= 0;
                             end else begin
                                 tri_ctr <= tri_ctr + 1;
                             end
@@ -179,27 +187,27 @@ module spi_driver #(
                         end else begin
                             nbl_ctr <= nbl_ctr + 1;
                             tri_valid <= 0;
-                            tri_out <= {tri_out[TRI_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            tri_out <= {tri_out[TRI_W-5:0], mosi};
                         end
                     end
                     
                     // Each ID is 8 bit so first two is loeaded into vert_id and last to into tri_id
                     LOAD_INST_DATA: begin
                         if (nbl_ctr < 2) begin
-                            vert_id_out <= {vert_id_out[3:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            vert_id_out <= {vert_id_out[3:0], mosi};
                             nbl_ctr <= nbl_ctr +1;
-                        end else if(nbl_ctr == 3) begin
-                            tri_id_out <= {tri_id_out[3:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                        end else if(nbl_ctr == 2) begin
+                            tri_id_out <= {tri_id_out[3:0], mosi};
                             nbl_ctr <= nbl_ctr +1;
                         end else begin
-                            tri_id_out <= {tri_id_out[3:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            tri_id_out <= {tri_id_out[3:0], mosi};
                             nbl_ctr    <= 0;
                             spi_state <= CREATE_INST;
                         end
                     end
                     CREATE_INST: begin
                         if (nbl_ctr == (TRANS_W/4)-1) begin
-                            transform_out <= {transform_out[TRANS_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            transform_out <= {transform_out[TRANS_W-5:0], mosi};
                             inst_valid <= 1;
                             inst_id_out <= next_inst_id;
                             next_inst_id <= next_inst_id + 1;
@@ -207,14 +215,14 @@ module spi_driver #(
                             spi_state  <= CREATE_INST_RESULT;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
-                            transform_out <= {transform_out[TRANS_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            transform_out <= {transform_out[TRANS_W-5:0], mosi};
                         end
                     end
                     LOAD_UPDATE_INST: begin
                         if (nbl_ctr < 2) begin
-                            inst_id_out <= {inst_id_out[3:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            inst_id_out <= {inst_id_out[3:0], mosi};
                         end else begin
-                            inst_id_out <= {inst_id_out[3:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            inst_id_out <= {inst_id_out[3:0], mosi};
                             nbl_ctr    <= 0;
                             inst_id_valid <= 1;
                             spi_state <= UPDATE_INST;
@@ -222,13 +230,13 @@ module spi_driver #(
                     end
                     UPDATE_INST: begin
                         if (nbl_ctr == (TRANS_W/4)-1) begin
-                            transform_out <= {transform_out[TRANS_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            transform_out <= {transform_out[TRANS_W-5:0], mosi};
                             inst_valid <= 1;
                             nbl_ctr <= 0;
                             spi_state  <= STATUS_OUT;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
-                            transform_out <= {transform_out[TRANS_W-5:0], mosi_3, mosi_2, mosi_1, mosi_0};
+                            transform_out <= {transform_out[TRANS_W-5:0], mosi};
                         end
                     end
 

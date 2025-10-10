@@ -73,40 +73,15 @@ module raster_mem #(
     logic [VTX_W-1:0]       vert_din, vert_out_r;
     logic                   vert_we;
 
-    xpm_memory_tdpram #(
-        .MEMORY_SIZE        (MAX_VERT * VTX_W),   // total bits
-        .MEMORY_PRIMITIVE   ("block"),            // force BRAM
-        .CLOCKING_MODE      ("independent_clock"),
-        .WRITE_DATA_WIDTH_A (VTX_W),
-        .READ_DATA_WIDTH_A  (VTX_W),
-        .WRITE_DATA_WIDTH_B (VTX_W),
-        .READ_DATA_WIDTH_B  (VTX_W),
-        .ADDR_WIDTH_A       (VERT_ADDR_W),
-        .ADDR_WIDTH_B       (VERT_ADDR_W),
-        .BYTE_WRITE_WIDTH_A (VTX_W),              // must evenly divide
-        .READ_LATENCY_A     (1),
-        .READ_LATENCY_B     (1),
-        .WRITE_MODE_A       ("write_first"),      // A = SPI writes
-        .WRITE_MODE_B       ("read_first")        // B = rasterizer reads
-    ) vertex_ram (
-        // Port A = SPI write
-        .clka   (sck),
-        .rsta   (rst),
-        .ena    (1'b1),
-        .wea    (vert_we),        // write enable
-        .addra  (vert_addr_wr),   // SPI write address
-        .dina   (vert_din),        // SPI write data
-        .douta  (),               // not used
-    
-        // Port B = Rasterizer read
-        .clkb   (clk),
-        .rstb   (rst),
-        .enb    (1'b1),
-        .web    (1'b0),           // no writes on B
-        .addrb  (vert_addr_rd),   // rasterizer read address
-        .dinb   ({VTX_W{1'b0}}),  // tie off
-        .doutb  (vert_out_r)      // rasterizer read data
-    );
+    (* ram_style = "block" *) logic [VTX_W-1:0] vertex_ram [0:MAX_VERT-1];
+
+    always_ff @(posedge sck) begin
+        if (vert_we)
+            vertex_ram[vert_addr_wr] <= vert_din;
+    end
+
+    always_ff @(posedge clk)
+        vert_out_r <= vertex_ram[vert_addr_rd];
 
     // ===================================================
     //  Triangle Memory (dual-port inferred)
@@ -116,40 +91,15 @@ module raster_mem #(
     logic [TRI_W-1:0]      tri_din, tri_out_r;
     logic                  tri_we;
 
-    xpm_memory_tdpram #(
-        .MEMORY_SIZE        (MAX_TRI * TRI_W),   // total bits
-        .MEMORY_PRIMITIVE   ("block"),           
-        .CLOCKING_MODE      ("independent_clock"),
-        .WRITE_DATA_WIDTH_A (TRI_W),
-        .READ_DATA_WIDTH_A  (TRI_W),
-        .WRITE_DATA_WIDTH_B (TRI_W),
-        .READ_DATA_WIDTH_B  (TRI_W),
-        .ADDR_WIDTH_A       (TRI_ADDR_W),
-        .ADDR_WIDTH_B       (TRI_ADDR_W),
-        .BYTE_WRITE_WIDTH_A (TRI_W),             // must divide evenly
-        .READ_LATENCY_A     (1),
-        .READ_LATENCY_B     (1),
-        .WRITE_MODE_A       ("write_first"),     // SPI writes
-        .WRITE_MODE_B       ("read_first")       // rasterizer reads
-    ) tri_ram (
-        // Port A = SPI write
-        .clka   (sck),
-        .rsta   (rst),
-        .ena    (1'b1),
-        .wea    (tri_we),        // write enable from FSM
-        .addra  (tri_addr_wr),   // SPI write address
-        .dina   (tri_din),        // SPI triangle input
-        .douta  (),              // unused
-    
-        // Port B = Rasterizer read
-        .clkb   (clk),
-        .rstb   (rst),
-        .enb    (1'b1),
-        .web    (1'b0),          // no writes on read port
-        .addrb  (tri_addr_rd),   // rasterizer triangle read address
-        .dinb   ({TRI_W{1'b0}}), // tie off
-        .doutb  (tri_out_r)       // rasterizer triangle out
-    );
+    (* ram_style = "block" *) logic [TRI_W-1:0] tri_ram [0:MAX_TRI-1];
+
+    always_ff @(posedge sck) begin
+        if (tri_we)
+            tri_ram[tri_addr_wr] <= tri_din;
+    end
+
+    always_ff @(posedge clk)
+        tri_out_r <= tri_ram[tri_addr_rd];
 
     // ===================================================
     //  Instance Memory (dual-port instantiated)
