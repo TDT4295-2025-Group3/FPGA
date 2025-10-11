@@ -67,6 +67,9 @@ module triangle_setup #(
     assign s3_ready = !s3_reg.valid || s4_ready;
     assign s4_ready = !s4_reg.valid || s5_ready;
 
+    // divider
+    // Replaced vendor AXIS divider with divu (WIDTH=32, FBITS=16) behind the same div_* facade.
+
     // Stage 1
     always_comb begin
         s1_next.valid      = in_valid;
@@ -221,6 +224,7 @@ module triangle_setup #(
         divu_b_32 = (denom_abs_rounded == 76'd0) ? 32'd0 : (denom_abs_rounded >> k);
         divu_a_32 = (denom_abs_rounded == 76'd0) ? 32'd0 : (32'd1 << (28 - k));
 
+        // keep legacy fields/states unchanged
         s5_next.valid       = s4_reg.valid;
         s5_next.v0x         = s4_reg.v0x;  s5_next.v0y = s4_reg.v0y;
         s5_next.e0x         = s4_reg.e0x;  s5_next.e0y = s4_reg.e0y;
@@ -228,7 +232,7 @@ module triangle_setup #(
         s5_next.d00         = s4_reg.d00;
         s5_next.d01         = s4_reg.d01;
         s5_next.d11         = s4_reg.d11;
-        s5_next.div_divisor = denom_abs_rounded[75:12]; // Q64.0
+        s5_next.div_divisor = denom_abs_rounded[75:12]; // informational
         s5_next.denom_neg   = s4_reg.denom[75];
         s5_next.bbox_min_x  = s4_reg.bbox_min_x;
         s5_next.bbox_max_x  = s4_reg.bbox_max_x;
@@ -288,18 +292,9 @@ module triangle_setup #(
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            div_busy       <= 1'b0;
-            s5_hold        <= '0;
-            out_reg        <= '0;
-            out_vld        <= 1'b0;
             div_hold_valid <= 1'b0;
             div_hold_q16   <= 16'd0;
         end else begin
-            if (s5_fire_div) begin
-                s5_hold  <= s5_reg;
-                div_busy <= 1'b1;
-            end
-
             if (divu_done) begin
                 div_hold_q16   <= divu_val[15:0]; // Q0.16
                 div_hold_valid <= 1'b1;
@@ -323,7 +318,10 @@ module triangle_setup #(
     // inflight + output
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            // already reset above
+            div_busy <= 1'b0;
+            s5_hold  <= '0;
+            out_reg  <= '0;
+            out_vld  <= 1'b0;
         end else begin
             if (s5_fire_div) begin
                 s5_hold  <= s5_reg;
