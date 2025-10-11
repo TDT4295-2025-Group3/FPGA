@@ -27,23 +27,25 @@ module depthbuffer #(
     localparam int ADDR_WIDTH  = $clog2(FB_DEPTH);
 
     logic [ADDR_WIDTH-1:0] addr, addr_reg;
-    (* ram_style = "block" *) logic [31:0] depth_mem [0:FB_DEPTH-1];
+    logic [31:0] depth_mem [0:FB_DEPTH-1];
     logic [31:0] depth_read;
     logic passed_depth_test;
 
-    // pipeline registers to align in_* with depth_read
+    // pipeline aligners for inputs (to match BRAM read latency)
     logic        in_valid_s1,         in_valid_s2;
     logic        in_compare_depth_s1, in_compare_depth_s2;
     color12_t    in_color_s1,         in_color_s2;
     q16_16_t     in_depth_s1,         in_depth_s2;
     logic [15:0] in_x_s1,             in_x_s2;
     logic [15:0] in_y_s1,             in_y_s2;
-    logic [ADDR_WIDTH-1:0] addr_reg_s2;
 
-    // simple 1-entry write-forward buffer (for read-after-write hazard)
-    logic                wr_bypass_vld;
+    // write address aligned to stage 3
+    logic [ADDR_WIDTH-1:0] addr_wr_s2;
+
+    // simple write-bypass (RAW hazard) state
+    logic                  wr_bypass_vld;
     logic [ADDR_WIDTH-1:0] wr_bypass_addr;
-    logic [31:0]         wr_bypass_data;
+    logic [31:0]           wr_bypass_data;
 
     // --- Pipeline stage 1: address computation ---
     always_ff @(posedge clk) begin
@@ -55,41 +57,49 @@ module depthbuffer #(
         in_x_s1             <= in_x;
         in_y_s1             <= in_y;
 
-        addr_reg <= in_y * FB_WIDTH + in_x;
+        addr_reg <= in_y * FB_WIDTH + in_x;      // read address (stage 2)
     end
 
     // --- Pipeline stage 2: synchronous BRAM read ---
+    logic [31:0] depth_read_bram;
+
+    // BRAM read (registered output)
     always_ff @(posedge clk) begin
-        // advance pipeline
+        depth_read_bram <= depth_mem[addr_reg];
+    end
+
+    // advance pipeline, compute write address corresponding to S2 payload
+    always_ff @(posedge clk) begin
         in_valid_s2         <= in_valid_s1;
         in_compare_depth_s2 <= in_compare_depth_s1;
         in_color_s2         <= in_color_s1;
         in_depth_s2         <= in_depth_s1;
         in_x_s2             <= in_x_s1;
         in_y_s2             <= in_y_s1;
-        addr_reg_s2         <= addr_reg;
 
-        // default read from memory
-        depth_read <= depth_mem[addr_reg];
-        // RAW hazard bypass: if last cycle wrote same address, use that value instead
+        addr_wr_s2          <= in_y_s1 * FB_WIDTH + in_x_s1;
+    end
+
+    // RAW bypass applied *outside* the RAM to keep BRAM inference clean
+    always_comb begin
+        depth_read = depth_read_bram;
         if (wr_bypass_vld && (wr_bypass_addr == addr_reg)) begin
-            depth_read <= wr_bypass_data;
+            depth_read = wr_bypass_data;
         end
     end
 
-    // Use strict '<' so the first winner on a tie keeps the pixel (prevents farther-from-equal overwrites)
-    assign passed_depth_test = (in_compare_depth_s2 == 1'b0) || ($signed(in_depth_s2) <= $signed(depth_read));
+    assign passed_depth_test = (in_compare_depth_s2 == 1'b0) || ($signed(in_depth_s2) < $signed(depth_read));
 
     // --- Pipeline stage 3: comparison + writeback ---
     always_ff @(posedge clk) begin
         if (rst) begin
-            out_valid       <= 1'b0;
-            out_color       <= 12'b0;
-            out_x           <= 16'b0;
-            out_y           <= 16'b0;
-            wr_bypass_vld   <= 1'b0;
-            wr_bypass_addr  <= '0;
-            wr_bypass_data  <= '0;
+            out_valid      <= 1'b0;
+            out_color      <= 12'b0;
+            out_x          <= 16'b0;
+            out_y          <= 16'b0;
+            wr_bypass_vld  <= 1'b0;
+            wr_bypass_addr <= '0;
+            wr_bypass_data <= '0;
         end else begin
             if (in_valid_s2 && passed_depth_test) begin
                 out_valid <= 1'b1;
@@ -97,10 +107,12 @@ module depthbuffer #(
                 out_x     <= in_x_s2;
                 out_y     <= in_y_s2;
 
-                // write depth and update bypass register
-                depth_mem[addr_reg_s2] <= in_depth_s2;
+                // BRAM write in a dedicated process style
+                depth_mem[addr_wr_s2] <= in_depth_s2;
+
+                // update bypass so the very next read of the same address sees new Z
                 wr_bypass_vld  <= 1'b1;
-                wr_bypass_addr <= addr_reg_s2;
+                wr_bypass_addr <= addr_wr_s2;
                 wr_bypass_data <= in_depth_s2;
             end else begin
                 out_valid <= 1'b0;
@@ -108,7 +120,6 @@ module depthbuffer #(
                 out_x     <= 16'b0;
                 out_y     <= 16'b0;
 
-                // if we didn’t write this cycle, clear bypass validity
                 wr_bypass_vld <= 1'b0;
             end
         end
