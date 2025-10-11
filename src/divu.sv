@@ -28,7 +28,7 @@ module divu #(
     logic [IWIDTH-1:0]  i;                  // iteration counter
 
     // Synchronous FSM
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or posedge rst) begin
         // default strobes
         done  <= 1'b0;
 

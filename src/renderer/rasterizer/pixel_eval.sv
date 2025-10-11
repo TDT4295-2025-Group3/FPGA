@@ -58,8 +58,9 @@ module pixel_eval #(
 
     // Stage 2
     logic signed [18:0] e2x, e2y;                 // Q16.3
-    assign e2x = {s1_reg.pixel.x,3'b0} - s1_reg.pixel.triangle.v0x;
-    assign e2y = {s1_reg.pixel.y,3'b0} - s1_reg.pixel.triangle.v0y;
+    // sample at pixel center: (x+0.5, y+0.5) => +4 in Q16.3
+    assign e2x = {s1_reg.pixel.x,3'b0} + 19'sd4 - s1_reg.pixel.triangle.v0x;
+    assign e2y = {s1_reg.pixel.y,3'b0} + 19'sd4 - s1_reg.pixel.triangle.v0y;
 
     always_comb begin
         s2_next.valid = s1_reg.valid;
@@ -102,14 +103,55 @@ module pixel_eval #(
     // Stage 4 comb: inside test (sign-aware)
     logic signed [75:0] u_num_c;                  // Q64.12
     logic inside_c;
+
+    // Top-Left rule helpers (reconstruct edge vectors for the three edges)
+    // Using only data already present in triangle: v1 = v0 + e0, v2 = v0 + e1
+    // Edges opposite each barycentric:
+    //   u (at v0) : edge v1->v2  = (e1 - e0)
+    //   v (at v1) : edge v2->v0  = (-e1)
+    //   w (at v2) : edge v0->v1  = (e0)
+    logic signed [18:0] edge_u_dx, edge_u_dy;
+    logic signed [18:0] edge_v_dx, edge_v_dy;
+    logic signed [18:0] edge_w_dx, edge_w_dy;
+
+    logic inc_u, inc_v, inc_w; // Top-Left inclusion flags
+
+    logic signed [75:0] vN, wN, uN;
+    logic v_ok, w_ok, u_ok; // Top-Left rule with tie-breaks per edge
     always_comb begin
         u_num_c = s3_reg.denom - s3_reg.v_num - s3_reg.w_num;
 
+        // Edge vectors
+        edge_u_dx = s3_reg.pixel.triangle.e1x - s3_reg.pixel.triangle.e0x;
+        edge_u_dy = s3_reg.pixel.triangle.e1y - s3_reg.pixel.triangle.e0y;
+
+        edge_v_dx = -s3_reg.pixel.triangle.e1x;
+        edge_v_dy = -s3_reg.pixel.triangle.e1y;
+
+        edge_w_dx = s3_reg.pixel.triangle.e0x;
+        edge_w_dy = s3_reg.pixel.triangle.e0y;
+
+        // Top-Left test: include when (dy < 0) || (dy == 0 && dx > 0)
+        inc_u = (edge_u_dy < 0) || ((edge_u_dy == 0) && (edge_u_dx > 0));
+        inc_v = (edge_v_dy < 0) || ((edge_v_dy == 0) && (edge_v_dx > 0));
+        inc_w = (edge_w_dy < 0) || ((edge_w_dy == 0) && (edge_w_dx > 0));
+        // Normalize numerators to a positive-denominator space for consistent comparisons
         if (s3_reg.pixel.triangle.denom_neg) begin
-            inside_c = (s3_reg.v_num <= 0) && (s3_reg.w_num <= 0) && (u_num_c <= 0);
+            vN = -s3_reg.v_num;
+            wN = -s3_reg.w_num;
+            uN = -u_num_c;
         end else begin
-            inside_c = (s3_reg.v_num >= 0) && (s3_reg.w_num >= 0) && (u_num_c >= 0);
+            vN =  s3_reg.v_num;
+            wN =  s3_reg.w_num;
+            uN =  u_num_c;
         end
+
+        // Top-Left rule with tie-breaks per edge
+        v_ok = (vN > 0) || ((vN == 0) && inc_v);
+        w_ok = (wN > 0) || ((wN == 0) && inc_w);
+        u_ok = (uN > 0) || ((uN == 0) && inc_u);
+        inside_c = v_ok && w_ok && u_ok;
+        inside_c = v_ok && w_ok && u_ok;
 
         s4_next.valid     = s3_reg.valid;
         s4_next.pixel     = s3_reg.pixel;
@@ -144,14 +186,18 @@ module pixel_eval #(
         u_mul = u_num_abs * $signed({1'b0, s4_reg.pixel.triangle.denom_inv}); // Q64.28
         if (s4_reg.pixel.triangle.denom_inv == 16'sd0 && s4_reg.valid && s4_reg.is_inside) begin
             $display("Warning: denom_inv is zero for pixel (%0d, %0d)", s4_reg.pixel.x, s4_reg.pixel.y);
-            v_mul =1;
-            w_mul =0;
-            u_mul =0;
+            // keep products as-is (multiplying by 0); u_w will become ~1 after rounding below
         end
 
-        v_w = q16_16_t'((v_mul + 28'd134217728) >>> 28); // round-to-nearest
+        // round-to-nearest
+        v_w = q16_16_t'((v_mul + 28'd134217728) >>> 28);
         w_w = q16_16_t'((w_mul + 28'd134217728) >>> 28);
         u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
+
+        // clamp tiny negatives from rounding to prevent cracks
+        if ($signed(v_w) < 0) v_w = '0;
+        if ($signed(w_w) < 0) w_w = '0;
+        if ($signed(u_w) < 0) u_w = '0;
 
         s5_next.valid = s4_reg.valid & s4_reg.is_inside;
         s5_next.pixel = s4_reg.pixel;
