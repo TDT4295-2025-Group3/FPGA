@@ -142,6 +142,12 @@ module pixel_eval #(
         v_mul = v_num_abs * $signed({1'b0, s4_reg.pixel.triangle.denom_inv}); // Q64.28
         w_mul = w_num_abs * $signed({1'b0, s4_reg.pixel.triangle.denom_inv}); // Q64.28
         u_mul = u_num_abs * $signed({1'b0, s4_reg.pixel.triangle.denom_inv}); // Q64.28
+        if (s4_reg.pixel.triangle.denom_inv == 16'sd0 && s4_reg.valid && s4_reg.is_inside) begin
+            $display("Warning: denom_inv is zero for pixel (%0d, %0d)", s4_reg.pixel.x, s4_reg.pixel.y);
+            v_mul =1;
+            w_mul =0;
+            u_mul =0;
+        end
 
         v_w = q16_16_t'((v_mul + 28'd134217728) >>> 28); // round-to-nearest
         w_w = q16_16_t'((w_mul + 28'd134217728) >>> 28);
