@@ -56,11 +56,11 @@ module pixel_traversal (
             end
             RUN: begin
                 if (can_emit) begin
-                    if (current_x < tri_reg.bbox_max_x) begin
+                    if (current_x + 16'd1 < tri_reg.bbox_max_x) begin
                         next_x = current_x + 16'd1;
                     end else begin
                         next_x = tri_reg.bbox_min_x;
-                        if (current_y < tri_reg.bbox_max_y) begin
+                        if (current_y + 16'd1 < tri_reg.bbox_max_y) begin
                             next_y = current_y + 16'd1;
                         end else begin
                             next_state = IDLE;
