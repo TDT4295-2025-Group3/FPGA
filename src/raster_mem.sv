@@ -47,9 +47,6 @@ module raster_mem #(
     input  logic [TRANS_W-1:0] transform_in,
     input  logic [7:0]         inst_id_in,
 
-    // Status
-    output logic [3:0] status,
-
     // Frame driver access
     input  logic [$clog2(MAX_INST)-1:0] inst_id_rd,
     input  logic [$clog2(MAX_VERT)-1:0] vert_addr_rd,
@@ -229,7 +226,6 @@ module raster_mem #(
             tri_we    <= 0;
             inst_we   <= 0;
             state     <= IDLE;
-            status    <= 4'b0000;
         end else begin
             if (opcode_valid) begin
                 unique case (opcode)
@@ -238,7 +234,6 @@ module raster_mem #(
                     4'b0010: state <= CREATE_TRI_HDR;
                     4'b0011: state <= CREATE_INST;
                     4'b0100: state <= UPDATE_INST;
-                    default: status <= 4'b0011; // invalid opcode
                 endcase
             end
 
@@ -267,10 +262,6 @@ module raster_mem #(
                         vert_addr_wr  <= curr_vert_base + vert_ctr;
                         vert_ctr      <= vert_ctr + 1;
                     end else if (vert_ctr == curr_vert_count) begin
-                        status <= 4'b0000;
-                        state  <= IDLE;
-                    end else if (vert_ctr > curr_vert_count) begin
-                        status <= 4'b0010;
                         state  <= IDLE;
                     end
                 end
@@ -293,10 +284,6 @@ module raster_mem #(
                         tri_addr_wr <= curr_tri_base + tri_ctr;
                         tri_ctr     <= tri_ctr + 1;
                     end else if (tri_ctr == curr_tri_count) begin
-                        status <= 4'b0000;
-                        state  <= IDLE;
-                    end else if (tri_ctr > curr_tri_count) begin
-                        status <= 4'b0010;
                         state  <= IDLE;
                     end
                 end
@@ -304,14 +291,12 @@ module raster_mem #(
                 CREATE_INST: if (inst_valid) begin
                     inst_din <= {transform_in, vert_id_in, tri_id_in};
                     inst_we  <= 1;
-                    status   <= 4'b0000;
                     state    <= IDLE;
                 end
 
                 UPDATE_INST: if (inst_valid) begin
                     inst_we  <= 1;
                     inst_din <= {transform_in, inst_dout_a[15:0]};
-                    status   <= 4'b0000;
                     state    <= IDLE;
                 end
             endcase
