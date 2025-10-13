@@ -157,3 +157,9 @@ module render_manager #(
     );
 
 endmodule
+
+
+
+
+// triangle, model_transform, camera_transform
+// transform to world -> transform to camera -> project to screen

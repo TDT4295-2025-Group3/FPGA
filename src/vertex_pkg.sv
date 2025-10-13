@@ -16,4 +16,11 @@ package vertex_pkg;
         vertex_t v2;
     } triangle_t;
 
+    typedef struct packed {
+        point3d_t pos;
+        point3d_t rot_sin;
+        point3d_t rot_cos;
+        point3d_t scale;
+    } transform_t;
+
 endpackage

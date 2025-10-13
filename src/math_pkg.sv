@@ -19,10 +19,18 @@ package math_pkg;
         return $signed(val) >>> 16;
     endfunction
 
-function automatic int q16_16_ceil(input logic signed [31:0] val);
-    logic signed [31:0] tmp = val + 32'sh0000_FFFF;
-    return tmp >>> 16;
-endfunction
+    function automatic int q16_16_ceil(input logic signed [31:0] val);
+        logic signed [31:0] tmp = val + 32'sh0000_FFFF;
+        return tmp >>> 16;
+    endfunction
+
+    function automatic q16_16_t project_q16_16(input q16_16_t f, input q16_16_t x, input q16_16_t z_inv);
+        q32_32_t fx;
+        q64_64_t wide;
+        fx = q32_32_t'(f) * q32_32_t'(x);
+        wide = q64_64_t'(fx) * q64_64_t'(z_inv);
+        project_q16_16 = q16_16_t'(wide >>> 32);
+    endfunction
 
     typedef struct packed {
         q16_16_t x;
