@@ -151,7 +151,6 @@ module pixel_eval #(
         w_ok = (wN > 0) || ((wN == 0) && inc_w);
         u_ok = (uN > 0) || ((uN == 0) && inc_u);
         inside_c = v_ok && w_ok && u_ok;
-        inside_c = v_ok && w_ok && u_ok;
 
         s4_next.valid     = s3_reg.valid;
         s4_next.pixel     = s3_reg.pixel;
@@ -173,7 +172,7 @@ module pixel_eval #(
     // Stage 5 comb: weights, interpolation
     // abs numerators since denom_inv = 1/abs(denom)
     logic signed [75:0] v_num_abs, w_num_abs, u_num_abs; // Q64.12
-    logic signed [93:0] v_mul, w_mul, u_mul;             // Q64.12 * Q0.16 = Q64.28
+    logic signed [110:0] v_mul, w_mul, u_mul;             // Q64.12 * Q0.35 = Q64.47
     q16_16_t v_w, w_w, u_w;                              // Q16.16
 
     always_comb begin
@@ -181,22 +180,22 @@ module pixel_eval #(
         w_num_abs = s4_reg.pixel.triangle.denom_neg ? -s4_reg.w_num : s4_reg.w_num;
         u_num_abs = s4_reg.pixel.triangle.denom_neg ? -s4_reg.u_num : s4_reg.u_num;
 
-        v_mul = v_num_abs * $signed({1'b0, s4_reg.pixel.triangle.denom_inv}); // Q64.28
-        w_mul = w_num_abs * $signed({1'b0, s4_reg.pixel.triangle.denom_inv}); // Q64.28
-        u_mul = u_num_abs * $signed({1'b0, s4_reg.pixel.triangle.denom_inv}); // Q64.28
+        v_mul = v_num_abs * $signed(s4_reg.pixel.triangle.denom_inv); // Q64.12 * Q0.35 = Q64.47
+        w_mul = w_num_abs * $signed(s4_reg.pixel.triangle.denom_inv); // Q64.12 * Q0.35 = Q64.47
+        u_mul = u_num_abs * $signed(s4_reg.pixel.triangle.denom_inv); // Q64.12 * Q0.35 = Q64.47
         if (s4_reg.pixel.triangle.denom_inv == 16'sd0 && s4_reg.valid && s4_reg.is_inside) begin
             $display("Warning: denom_inv is zero for pixel (%0d, %0d)", s4_reg.pixel.x, s4_reg.pixel.y);
             // keep products as-is (multiplying by 0); u_w will become ~1 after rounding below
         end
 
         // round-to-nearest
-        v_w = q16_16_t'((v_mul + 28'd134217728) >>> 28);
-        w_w = q16_16_t'((w_mul + 28'd134217728) >>> 28);
-        u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
+        v_w = q16_16_t'((v_mul + (1 << 30)) >>> 31);
+        w_w = q16_16_t'((w_mul + (1 << 30)) >>> 31);
 
-        // clamp tiny negatives from rounding to prevent cracks
         if ($signed(v_w) < 0) v_w = '0;
         if ($signed(w_w) < 0) w_w = '0;
+
+        u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
         if ($signed(u_w) < 0) u_w = '0;
 
         s5_next.valid = s4_reg.valid & s4_reg.is_inside;
