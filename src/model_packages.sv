@@ -1,40 +1,36 @@
-package transform_pkg;
+
+
+// transform use 32 * 4*3 = 384
+package transform_pkg; 
+   import math_pkg::point3d_t;
    typedef struct packed {
-       logic [32-1:0]posx;
-       logic [32-1:0]posy;
-       logic [32-1:0]posz;
-       logic [32-1:0]rotx;
-       logic [32-1:0]roty;  
-       logic [32-1:0]rotz;
-       logic [32-1:0]scalex;
-       logic [32-1:0]scaley;
-       logic [32-1:0]scalez;
+        point3d_t pos;
+        point3d_t sin_rot;
+        point3d_t cos_rot;
+        point3d_t scale;
    } transform_t;
 endpackage
 
+// insetance use 32 * 4*3 + 8 * 2 = 400
 package buffer_id_pkg;
+   import math_pkg::point3d_t;
    typedef struct packed {
-       logic [32-1:0]posx;
-       logic [32-1:0]posy;
-       logic [32-1:0]posz;
-       logic [32-1:0]rotx;
-       logic [32-1:0]roty;
-       logic [32-1:0]rotz;
-       logic [32-1:0]scalex;
-       logic [32-1:0]scaley;
-       logic [32-1:0]scalez;
-       logic [8-1:0] vert_id;  // Max 256 distinct buffers
-       logic [8-1:0] tri_id;
+        point3d_t pos;
+        point3d_t sin_rot;
+        point3d_t cos_rot;
+        point3d_t scale;
+        logic [8-1:0] vert_id;  // Max 256 distinct buffers
+        logic [8-1:0] tri_id;
    } inst_t;
 
    typedef struct packed {
-       logic [13-1:0]  base;    // Max vertices 8192 
-       logic [8-1:0]   count;
+        logic [13-1:0]  base;    // Max vertices 8192 
+        logic [8-1:0]   count;
    } vert_desc_t;
     
    typedef struct packed {
-       logic [13-1:0]   base;
-       logic [8-1:0]    count;
+        logic [13-1:0]   base;
+        logic [8-1:0]    count;
    } tri_desc_t;
 endpackage
 
@@ -67,15 +63,14 @@ package opcode_defs;
 endpackage
 
 package status_defs;
-    localparam logic [3:0] INVALID_STATUS = 4'b0000;
+    localparam logic [3:0] INVALID_DATA   = 4'b0000;
     localparam logic [3:0] OK             = 4'b0001;
     localparam logic [3:0] OUT_OF_MEMORY  = 4'b0010;
-    localparam logic [3:0] BUFFER_FULL    = 4'b0011;
-    localparam logic [3:0] INVALID_ID     = 4'b0100;
-    localparam logic [3:0] INVALID_DATA   = 4'b0101;
-    localparam logic [3:0] INVALID_OPCODE = 4'b0101;
+    localparam logic [3:0] INVALID_ID     = 4'b0011;
+    localparam logic [3:0] INVALID_OPCODE = 4'b0100;
+    localparam logic [3:0] BUFFER_FULL    = 4'b0101;
 
 endpackage
 
 module pkg();
-endmodule
+endmodule   

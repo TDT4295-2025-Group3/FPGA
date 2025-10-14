@@ -19,7 +19,7 @@ module spi_driver #(
     parameter TIDX_W    = $clog2(MAX_TRI_CNT),   
     parameter TRI_W     = 3*VIDX_W,           // 3*8 bits. Might want to increase for safety 3*12 bits
     parameter DATA_W    = 32,
-    parameter TRANS_W   = DATA_W * 9          // 9 floats
+    parameter TRANS_W   = DATA_W * 12         // 9 floats: x,y,z,cos_x,sin_x,cos_y,sin_y,cos_z,sin_z,scale_x,scale_y,scale_z
     )(
     
     // SPI interface pins
@@ -108,7 +108,6 @@ module spi_driver #(
             next_tri_base  <= 0;
             vert_base     <= 0;
             tri_base      <= 0;
-            CS_ready      <= 0;
             spi_state <= LOAD_OP;
         end else begin 
             if(!CS_n && CS_ready) begin
@@ -311,21 +310,26 @@ module spi_driver #(
             end
         end
     end
+    
+    logic [3:0] ready_ctr;
 
     // Hold read for 8 cycles to remove junk data
     always_ff @(posedge sck) begin
+        if(rst) begin
+            ready_ctr <= 0;
+            CS_ready  <= 0;
+        end
         if(CS_n && !CS_ready) begin
-            if(nbl_ctr == 8-1)
-                nbl_ctr <= nbl_ctr +1;
+            if(ready_ctr == 8-1)
+                ready_ctr <= ready_ctr +1;
             else begin
-                nbl_ctr <= 0;
+                ready_ctr <= 0;
                 CS_ready <= 1;
             end
         end else if(!CS_n && CS_ready) begin
             CS_ready <= 0;
         end
     end
-
         
     always_ff @(negedge sck) begin
         if (rst) begin
