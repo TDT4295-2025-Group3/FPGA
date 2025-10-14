@@ -4,7 +4,7 @@ package transform_pkg;
        logic [32-1:0]posy;
        logic [32-1:0]posz;
        logic [32-1:0]rotx;
-       logic [32-1:0]roty;
+       logic [32-1:0]roty;  
        logic [32-1:0]rotz;
        logic [32-1:0]scalex;
        logic [32-1:0]scaley;

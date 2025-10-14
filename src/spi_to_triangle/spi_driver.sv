@@ -370,7 +370,6 @@ module spi_driver #(
             endcase
         end
     end
-
     assign miso = miso_r;
     
 endmodule
