@@ -40,11 +40,10 @@ module model_world_transformer(
     assign cos_z = transform.rot_cos.z;
 
     assign busy = |valid_pipe;  // busy if any stage is active
-    assign vert_ready[0] = in_ready;
     assign in_ready = (vert_ctr_in < 3) && (valid_pipe != 3'b111 ) ? 1 : 0;  // ready at start of triangle
 
-
-    // Pipeline stage 0: LOAD vertex
+    // 
+    // Load vertex
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             vert_ctr_in  <= 0;
@@ -81,7 +80,7 @@ module model_world_transformer(
         end
     end
 
-    // Pipeline stage 1: rotation + translation
+    // Rotation + translation
     always_ff @(posedge clk) begin
         if (valid_pipe[1]) begin
             rot_v.x <= (cos_z*cos_y)*load_v.x
@@ -103,7 +102,7 @@ module model_world_transformer(
         end
     end
 
-    // Pipeline stage 2: OUTPUT
+    // output
     always_ff @(posedge clk or posedge rst) begin
         out_valid <= 0; 
         if (valid_pipe[2]) begin
