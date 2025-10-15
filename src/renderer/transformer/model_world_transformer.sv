@@ -1,111 +1,125 @@
 `timescale 1ns / 1ps
+`default_nettype none
+
 import math_pkg::*;
 import vertex_pkg::*;
-default nettype wire;
 
 module model_world_transformer(
-    input  clk,
-    input  rst,
- 
-    input  transform_t transform,
-    input  triangle_t triangle,
-    input  logic in_valid,
-    output logic in_ready,
+    input  logic        clk,
+    input  logic        rst,
 
-    output triangle_t out_triangle,
-    output logic out_valid,
-    input  logic out_ready,
-    output logic busy
-    );
-    
-    vertex_t rot_x, rot_y, rot_z;
-    vertex_t world_x, world_y, world_z;
-    logic [1:0] vert_ctr;
-    logic [1:0] load_ctr;
-    logic vert_loaded;
+    input  transform_t  transform,
+    input  triangle_t   triangle,
+    input  logic        in_valid,
+    output logic        in_ready,
 
-    q16_16_t vert_x, vert_y, vert_z;
+    output triangle_t   out_triangle,
+    output logic        out_valid,
+    input  logic        out_ready,
+    output logic        busy
+);
+
+    // -------------------------------------
+    // Internal pipeline registers
+    // -------------------------------------
+    vertex_t load_v, compute_v, world_v;
+    vertex_t rot_v;
+    logic [1:0] vert_ctr_in;     // which vertex is currently loading
+    logic [1:0] vert_ctr_out;    // which vertex is being written out
+    logic [2:0] valid_pipe;      // shift register for valid bits (LOAD→COMPUTE→OUTPUT)
+    logic [2:0] load_vert;
+    logic [1:0] vert_ready_ctr;
+
+    // Rotation parameters
     q16_16_t cos_x, sin_x, cos_y, sin_y, cos_z, sin_z;
-
     assign sin_x = transform.rot_sin.x;
     assign cos_x = transform.rot_cos.x;
     assign sin_y = transform.rot_sin.y;
     assign cos_y = transform.rot_cos.y;
     assign sin_z = transform.rot_sin.z;
     assign cos_z = transform.rot_cos.z;
-    
-always_ff @(posedge clk or posedge rst) begin
-    if (rst) begin
-        vert_ctr    <= 0;
-        vert_loaded <= 0;
-    end else if (in_valid && in_ready) begin
-        case (vert_ctr)
-            2'd0: begin
-                vert_x <= triangle.v0.x;
-                vert_y <= triangle.v0.y;
-                vert_z <= triangle.v0.z;
-            end
-            2'd1: begin
-                vert_x <= triangle.v1.x;
-                vert_y <= triangle.v1.y;
-                vert_z <= triangle.v1.z;
-            end
-            2'd2: begin
-                vert_x <= triangle.v2.x;
-                vert_y <= triangle.v2.y;
-                vert_z <= triangle.v2.z;
-            end
-        endcase
 
-        // Rotation (Z-Y-X order)
-        rot_x <= (cos_z*cos_y)*vert_x  // FIXME: this gonna break because of fixed point (q16.16 * q16.16 = q32.32 and multiplication result needs to be shifted back)
-               + (cos_z*sin_y*sin_x - sin_z*cos_x)*vert_y 
-               + (cos_z*sin_y*cos_x + sin_z*sin_x)*vert_z;
+    assign busy = |valid_pipe;  // busy if any stage is active
+    assign vert_ready[0] = in_ready;
+    assign in_ready = (vert_ctr_in < 3) && (valid_pipe != 3'b111 ) ? 1 : 0;  // ready at start of triangle
 
-        rot_y <= (sin_z*cos_y)*vert_x // FIXME: this gonna break because of fixed point
-               + (sin_z*sin_y*sin_x + cos_z*cos_x)*vert_y 
-               + (sin_z*sin_y*cos_x - cos_z*sin_x)*vert_z;
 
-        rot_z <= (-sin_y)*vert_x // FIXME: this gonna break because of fixed point
-               + (cos_y*sin_x)*vert_y 
-               + (cos_y*cos_x)*vert_z;
-
-        // Translation to world
-        world_x <= rot_x + transform.pos.x;
-        world_y <= rot_y + transform.pos.y;
-        world_z <= rot_z + transform.pos.z;
-
-        // Next vertex
-        if(load_ctr < 3) begin
-            Case (vert_ctr)
-                2'd0: begin
-                    out_traingle.v0.x <= world_x;
-                    out_traingle.v0.y <= world_y;
-                    out_traingle.v0.z <= world_z;
-                    load_ctr <= load_ctr +1;
+    // Pipeline stage 0: LOAD vertex
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            vert_ctr_in  <= 0;
+            valid_pipe   <= 3'b000;
+        end else begin
+            // Hold input 3 cycles
+            if(in_valid && in_ready) begin
+                load_vert_ctr <= load_vert_ctr +1;
+                load_vert <= 1;
+            end else if(load_vert)
+                load_vert_ctr <= load_vert_ctr +1;
+                if(load_vert_ctr == 2) begin
+                    load_vert_ctr <= 0;
+                    load_vert <= 0; 
                 end
-                2'd1: begin
-                    out_traingle.v1.x <= world_x;
-                    out_traingle.v1.y <= world_y;
-                    out_traingle.v1.z <= world_z;
-                    load_ctr <= load_ctr +1;
-                end
-                2'd2: begin
-                    out_traingle.v2.x <= world_x;
-                    out_traingle.v2.y <= world_y;
-                    out_traingle.v2.z <= world_z;
-                end
-            endcase
-            load_ctr <= load_ctr +1;
-        end else begin 
-            load_ctr <= 0;
-            out_valid <= 1;
-            out_traingle.v0.x <= world_x;
-            out_traingle.v0.y <= world_y;
-            out_traingle.v0.z <= world_z;
+
+            // shift pipline state
+            valid_pipe <= {valid_pipe[1:0], (in_valid || load_vert) && in_ready}; 
+
+            // load next vertex when input valid
+            if ((in_valid || load_vert) && in_ready) begin
+                unique case (vert_ctr_in)
+                    2'd0: load_v <= triangle.v0;
+                    2'd1: load_v <= triangle.v1;
+                    2'd2: load_v <= triangle.v2;
+                endcase
+                vert_ctr_in <= vert_ctr_in + 1;
+            end
+
+            if (vert_ctr_out == 2) begin
+                vert_ctr_in   <= 0;
+                valid_pipe[0] <= 0;
+            end
         end
-        vert_ctr <= (vert_ctr == 2) ? 0 : vert_ctr + 1;
     end
-end
+
+    // Pipeline stage 1: rotation + translation
+    always_ff @(posedge clk) begin
+        if (valid_pipe[1]) begin
+            rot_v.x <= (cos_z*cos_y)*load_v.x
+                     + (cos_z*sin_y*sin_x - sin_z*cos_x)*load_v.y
+                     + (cos_z*sin_y*cos_x + sin_z*sin_x)*load_v.z;
+
+            rot_v.y <= (sin_z*cos_y)*load_v.x
+                     + (sin_z*sin_y*sin_x + cos_z*cos_x)*load_v.y
+                     + (sin_z*sin_y*cos_x - cos_z*sin_x)*load_v.z;
+
+            rot_v.z <= (-sin_y)*load_v.x
+                     + (cos_y*sin_x)*load_v.y
+                     + (cos_y*cos_x)*load_v.z;
+
+            // Translate to world coordinates
+            world_v.x <= rot_v.x + transform.pos.x;
+            world_v.y <= rot_v.y + transform.pos.y;
+            world_v.z <= rot_v.z + transform.pos.z;
+        end
+    end
+
+    // Pipeline stage 2: OUTPUT
+    always_ff @(posedge clk or posedge rst) begin
+        out_valid <= 0; 
+        if (valid_pipe[2]) begin
+            unique case (vert_ctr_out)
+                2'd0: out_triangle.v0 <= world_v;
+                2'd1: out_triangle.v1 <= world_v;
+                2'd2: out_triangle.v2 <= world_v;
+            endcase
+        end
+
+        if (vert_ctr_out == 2 && out_ready) begin
+            out_valid <= 1;
+            vert_ctr_out <= 0;
+        end else if (valid_pipe[2] && vert_ctr_out < 2) begin
+            vert_ctr_out <= vert_ctr_out +1;
+        end
+    end
 
 endmodule
