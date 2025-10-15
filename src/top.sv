@@ -111,7 +111,7 @@ module top (
     triangle_t feeder_tri;
     logic feeder_valid, feeder_busy;
 
-    q16_16_t offset_x, offset_y;
+   q16_16_t offset_x, offset_y;
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
             offset_x <= -($signed(FB_WIDTH) <<< 15);
@@ -126,12 +126,16 @@ module top (
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
             offset_y <= 11'd0;
-        else
-            offset_y <= 11'd0;
+        else if (begin_frame) begin
+                if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
+                    offset_y <= 11'd0;
+                else
+                    offset_y <= offset_y + (32'sd1 <<< 13);
+            end
     end
 
     triangle_feeder #(
-        .N_TRIS(983),
+        .N_TRIS(346),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
@@ -148,7 +152,7 @@ module top (
     // ----------------------------------------------------------------
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
-    localparam color12_t CLEAR_COLOR = 12'h9d5;
+    localparam color12_t CLEAR_COLOR = 12'h223;
 
     render_manager #(
         .WIDTH (FB_WIDTH),
