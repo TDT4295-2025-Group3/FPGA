@@ -135,7 +135,7 @@ module top (
     end
 
     triangle_feeder #(
-        .N_TRIS(346),
+        .N_TRIS(388),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
