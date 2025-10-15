@@ -69,22 +69,8 @@ module top (
 
     logic [11:0] fb_read_data;
 
-    always_ff @(posedge clk_pix or negedge btn_rst_n) begin
-        if (!btn_rst_n) begin
-            fb_read_x <= 8'd0;
-            fb_read_y <= 7'd0;
-        end else begin
-            if (sx < (FB_WIDTH << 2))
-                fb_read_x <= sx[9:2];
-            else
-                fb_read_x <= FB_WIDTH-1;
-
-            if (sy < (FB_HEIGHT << 2))
-                fb_read_y <= sy[8:2];
-            else
-                fb_read_y <= FB_HEIGHT-1;
-        end
-    end
+    assign fb_read_x = sx[9:2];
+    assign fb_read_y = sy[8:2];
     
     // ----------------------------------------------------------------
     // Renderer outputs (render_manager -> depthbuffer)
@@ -119,7 +105,7 @@ module top (
             if (offset_x >= ($signed(FB_WIDTH) <<< 15))
                 offset_x <= -($signed(FB_WIDTH) <<< 15);
             else
-                offset_x <= offset_x + (32'sd1 <<< 15);
+                offset_x <= offset_x + (32'sd1 <<< 18);
         end
     end
 
@@ -135,7 +121,7 @@ module top (
     end
 
     triangle_feeder #(
-        .N_TRIS(388),
+        .N_TRIS(430),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
