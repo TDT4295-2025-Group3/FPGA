@@ -115,20 +115,24 @@ module model_world_transformer(
             end
         end
     end
-
+    
+    q16_16_t x, y, z;
     // Rotation + translation
     always_ff @(posedge clk) begin
         if (valid_pipe[1] && !rst) begin
             // use dot product for rotation
+            x = load_v.pos.x;
+            y = load_v.pos.y;
+            z = load_v.pos.z;
             rot_v.pos.x <= dot3_q16(R11, R12, R13, x, y, z);
             rot_v.pos.y <= dot3_q16(R21, R22, R23, x, y, z);
             rot_v.pos.z <= dot3_q16(R31, R32, R33, x, y, z);
             rot_v.color <= load_v.color;
 
             // Translate to world coordinates
-            world_v.pos.x <= m(rot_v.pos.x * transform.scale.x) + transform.pos.x;
-            world_v.pos.y <= m(rot_v.pos.y * transform.scale.y) + transform.pos.y;
-            world_v.pos.z <= m(rot_v.pos.z * transform.scale.z) + transform.pos.z;
+            world_v.pos.x <= m(rot_v.pos.x, transform.scale.x) + transform.pos.x;
+            world_v.pos.y <= m(rot_v.pos.y, transform.scale.y) + transform.pos.y;
+            world_v.pos.z <= m(rot_v.pos.z, transform.scale.z) + transform.pos.z;
             world_v.color   <= rot_v.color;
         end
     end
