@@ -17,8 +17,8 @@ module raster_mem #(
     parameter TIDX_W  = $clog2(MAX_TRI_CNT),   
     parameter TRI_W   = 3*VIDX_W,
     parameter DATA_W  = 32,
-    parameter TRANS_W = DATA_W * 9,
-    parameter INST_W  = DATA_W * 9 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
+    parameter TRANS_W = DATA_W * 12,
+    parameter INST_W  = DATA_W * 12 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
 )(
     input  logic clk,
     input  logic rst,
@@ -70,7 +70,7 @@ module raster_mem #(
     logic [VTX_W-1:0]       vert_din, vert_out_r;
     logic                   vert_we;
 
-    (* ram_style = "block" *) (*keep="true"*) logic [VTX_W-1:0] vertex_ram [0:MAX_VERT-1];
+    (* ram_style = "block" *) logic [VTX_W-1:0] vertex_ram [0:MAX_VERT-1];
 
     always_ff @(posedge sck) begin
         if (vert_we)
@@ -88,7 +88,7 @@ module raster_mem #(
     logic [TRI_W-1:0]      tri_din, tri_out_r;
     logic                  tri_we;
 
-    (* ram_style = "block" *) (*keep="true"*) logic [TRI_W-1:0] tri_ram [0:MAX_TRI-1];
+    (* ram_style = "block" *) logic [TRI_W-1:0] tri_ram [0:MAX_TRI-1];
 
     always_ff @(posedge sck) begin
         if (tri_we)
