@@ -55,6 +55,7 @@ module spi_driver #(
     // spi tri-state logic
     logic [3:0] spi_in;
     logic [3:0] spi_out;
+    logic [3:0] spi_out_r;
     logic       spi_oe;
     
     assign spi_io = spi_oe ? spi_out : 4'bz;
@@ -63,8 +64,7 @@ module spi_driver #(
     // SPI buffer resources
     (*keep="true"*) logic [7:0] next_inst_id, next_vert_id, next_tri_id;  // force keep due to synth optimization
     
-    logic [3:0] status;
-    logic [3:0] error_status;
+    status_e error_status;
     logic       error_flag;
     logic [3:0] nybble;
     logic [$clog2(TRANS_W/4):0] nbl_ctr;   // Nybble counter, need to be able to count to 288 bit
@@ -73,7 +73,7 @@ module spi_driver #(
     logic [$clog2(MAX_VERT)-1:0]   next_vert_base;
     logic [$clog2(MAX_VERT)-1:0]   next_tri_base;
     logic [VTX_W-1:0] vert_r;
-    logic spi_in_done;
+    logic spi_out_done;
     logic CS_ready;
     
     // spi states
@@ -97,9 +97,8 @@ module spi_driver #(
             next_tri_base  <= 0;
             vert_base     <= 0;
             tri_base      <= 0;
-            status       <= OK;
-            error_status <= 4'b0000;
             error_flag   <= 0;
+            error_status <= OK;
             spi_state <= LOAD_OP;
         end else begin 
             if(!CS_n && CS_ready) begin
@@ -293,13 +292,15 @@ module spi_driver #(
                         vert_valid <= 0;
                         tri_valid  <= 0;
                         inst_valid <= 0;
-                        if(spi_in_done)
+                        if(spi_out_done)
                             spi_state <= STATUS_OUT;
-                            status    <= OK;
+                            spi_out_r <= error_flag ? error_status : OK;
+                            error_status <= OK;
+                            error_flag   <= 0;
                     end
 
                     STATUS_OUT: begin
-                        if(spi_in_done)
+                        if(spi_out_done)
                             spi_state <= LOAD_OP;
                     end
                 endcase
@@ -326,61 +327,58 @@ module spi_driver #(
             CS_ready <= 0;
         end
     end
-        
+    
+    logic [1:0] out_ctr;
+    // spi output logic    
     always_ff @(negedge sck) begin
         if (rst) begin
-            spi_out     <= 0;
-            spi_in_done <= 0;
-            spi_oe      <= 0;
+            spi_out_done <= 0;
+            spi_oe       <= 0;
+            out_ctr      <= 0;
         end else if (!CS_n && CS_ready) begin
-            spi_in_done <= 0; // default not done
+            spi_out_done <= 0; // default not done
             spi_oe      <= 0; // default spi_in
             case (spi_state)
                 CREATE_VERT_RESULT: begin
                     spi_oe  <= 1;
-                    if (nbl_ctr == 1) begin
+                    if (out_ctr == 1) begin
                         spi_out <= vert_id_out[3:0];
-                        nbl_ctr   <= 0;
-                        spi_in_done <= 1; // signal done to posedge FSM
+                        out_ctr   <= 0;
+                        spi_out_done <= 1; // signal done to posedge FSM
                     end else begin
-                        nbl_ctr <= nbl_ctr + 1;
+                        out_ctr <= out_ctr + 1;
                         spi_out <= vert_id_out[7:4];
                     end
                 end
 
                 CREATE_TRI_RESULT: begin
                     spi_oe  <= 1;
-                    if (nbl_ctr == 1) begin
+                    if (out_ctr == 1) begin
                         spi_out <= tri_id_out[3:0];
-                        nbl_ctr   <= 0;
-                        spi_in_done <= 1;
+                        out_ctr   <= 0;
+                        spi_out_done <= 1;
                     end else begin
-                        nbl_ctr <= nbl_ctr + 1;
+                        out_ctr <= out_ctr + 1;
                         spi_out <= tri_id_out[7:4];
                     end
                 end
 
                 CREATE_INST_RESULT: begin
                     spi_oe  <= 1;
-                    if (nbl_ctr == 1) begin
-                        spi_out <= inst_id_out[3:0];
-                        nbl_ctr   <= 0;
-                        spi_in_done <= 1;
+                    if (out_ctr == 1) begin
+                        spi_out   <= inst_id_out[3:0];
+                        out_ctr   <= 0;
+                        spi_out_done <= 1;
                     end else begin
-                        nbl_ctr <= nbl_ctr + 1;
+                        out_ctr <= out_ctr + 1;
                         spi_out <= inst_id_out[7:4];
                     end
                 end
 
                 STATUS_OUT: begin
                     spi_oe  <= 1;
-                    if(error_flag) begin
-                        spi_out <= error_status;
-                        error_status <= 4'b0001;
-                        error_flag   <= 1;
-                    end else 
-                        spi_out <= status;
-                    spi_in_done <= 1;
+                    spi_out <= spi_out_r;
+                    spi_out_done <= 1;
                 end
                 default: begin 
                     spi_oe  <= 0;

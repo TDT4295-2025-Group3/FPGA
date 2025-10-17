@@ -311,7 +311,7 @@ module raster_mem #(
 
     inst_t inst_cast;
     assign inst_cast = inst_t'(inst_dout_r); // r for register which is used for output
-    assign transform_out       = transform_t'(inst_dout_r[303:16]);
+    assign transform_out       = transform_t'(inst_dout_r[TRANS_W+15:16]);
     assign curr_vert_base_out  = vert_table[inst_cast.vert_id].base;
     assign curr_vert_count_out = vert_table[inst_cast.vert_id].count;
     assign curr_tri_base_out   = tri_table[inst_cast.tri_id].base;

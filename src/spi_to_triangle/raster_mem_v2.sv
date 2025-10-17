@@ -17,8 +17,8 @@ module raster_mem #(
     parameter TIDX_W  = $clog2(MAX_TRI_CNT),   
     parameter TRI_W   = 3*VIDX_W,
     parameter DATA_W  = 32,
-    parameter TRANS_W = DATA_W * 9,
-    parameter INST_W  = DATA_W * 9 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
+    parameter TRANS_W = DATA_W * 12,
+    parameter INST_W  = DATA_W * 12 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
 )(
     input  logic clk,
     input  logic rst,
@@ -63,7 +63,7 @@ module raster_mem #(
 );
 
     // ===================================================
-    //  Vertex Memory
+    //  Vertex Memory (dual-port inferred)
     // ===================================================
     localparam VERT_ADDR_W = $clog2(MAX_VERT);
     logic [VERT_ADDR_W-1:0] vert_addr_wr;
@@ -81,7 +81,7 @@ module raster_mem #(
         vert_out_r <= vertex_ram[vert_addr_rd];
 
     // ===================================================
-    //  Triangle Memory
+    //  Triangle Memory (dual-port inferred)
     // ===================================================
     localparam TRI_ADDR_W = $clog2(MAX_TRI);
     logic [TRI_ADDR_W-1:0] tri_addr_wr;
@@ -99,39 +99,40 @@ module raster_mem #(
         tri_out_r <= tri_ram[tri_addr_rd];
 
     // ===================================================
-    //  Instance Memory
+    //  Instance Memory (dual-port instantiated)
     //  We need this because we read and write from the same port 
     // ===================================================
     // signals for the instance RAM
-    logic transform_we;                               // write enable (assert 1 cycle with data present)
-    logic [TRANS_W-1:0] transform_din;                 // packed data to write
-    (* keep = "true"*) logic [TRANS_W-1:0] transform_dout_r;
+    logic inst_we;                               // write enable (assert 1 cycle with data present)
+    logic [INST_W-1:0] inst_din;                 // packed data to write
+    logic [INST_W-1:0] inst_dout_r;              // packed data read (registered by XPM)
+    logic [INST_W-1:0] inst_dout_a; 
     
     // instantiate XPM dual-port RAM (A = write port on sck, B = read port on clk)
     xpm_memory_tdpram #(
-        .MEMORY_SIZE        (MAX_INST * TRANS_W),    // total bits (informational)
+        .MEMORY_SIZE        (MAX_INST * INST_W),    // total bits (informational)
         .MEMORY_PRIMITIVE   ("block"),
         .CLOCKING_MODE      ("independent_clock"),
-        .WRITE_DATA_WIDTH_A (TRANS_W),
-        .READ_DATA_WIDTH_A  (TRANS_W),
-        .WRITE_DATA_WIDTH_B (TRANS_W),
-        .READ_DATA_WIDTH_B  (TRANS_W),
+        .WRITE_DATA_WIDTH_A (INST_W),
+        .READ_DATA_WIDTH_A  (INST_W),
+        .WRITE_DATA_WIDTH_B (INST_W),
+        .READ_DATA_WIDTH_B  (INST_W),
         .ADDR_WIDTH_A       ($clog2(MAX_INST)),
         .ADDR_WIDTH_B       ($clog2(MAX_INST)),
-        .BYTE_WRITE_WIDTH_A (TRANS_W),               // whole word writes
+        .BYTE_WRITE_WIDTH_A (INST_W),               // whole word writes
         .READ_LATENCY_A     (1),
         .READ_LATENCY_B     (1),
         .WRITE_MODE_A       ("write_first"),
         .WRITE_MODE_B       ("read_first")
-    ) transform_ram (
+    ) inst_ram (
         // Port A - write side (SPI, sck)
         .clka   (sck),
         .rsta   (rst),
         .ena    (1'b1),
-        .wea    (transform_we),          // single-bit
+        .wea    (inst_we),          // single-bit or vector, XPM expects [WRITE_DATA_WIDTH_A/...] but for full-word use 1-bit bus may be OK
         .addra  (inst_id_in),       // From SPI driver
-        .dina   (transform_din),
-        .douta  (),            
+        .dina   (inst_din),
+        .douta  (inst_dout_a),            
     
         // Port B - read side (raster/frame, clk)
         .clkb   (clk),
@@ -139,16 +140,16 @@ module raster_mem #(
         .enb    (1'b1),
         .web    (1'b0),
         .addrb  (inst_id_rd),
-        .dinb   ({TRANS_W{1'b0}}),
-        .doutb  (transform_dout_r)
+        .dinb   ({INST_W{1'b0}}),
+        .doutb  (inst_dout_r)
+        // many other optional ports exist (sleep, injectecc, etc) - leave unconnected
     );
 
     // ===================================================
     //  Descriptor Tables
     // ===================================================
-    vert_desc_t vert_table [MAX_VERT_BUF-1:0];
-    tri_desc_t  tri_table  [MAX_TRI_BUF-1:0];
-    inst_desc_t inst_table [MAX_INST-1:0];
+    vert_desc_t vert_table [MAX_INST];
+    tri_desc_t  tri_table  [MAX_VERT_BUF];
 
     // ===================================================
     //  FSM and Counters
@@ -162,7 +163,7 @@ module raster_mem #(
         IDLE, WIPE_ALL, CREATE_VERT_HDR, CREATE_VERT_DATA,
         CREATE_TRI_HDR, CREATE_TRI_DATA,
         CREATE_INST, UPDATE_INST
-    } state;
+    } mem_state;
 
     // ===================================================
     //  SPI-Facing FSM
@@ -173,24 +174,24 @@ module raster_mem #(
             tri_ctr   <= 0;
             vert_we   <= 0;
             tri_we    <= 0;
-            transform_we   <= 0;
-            state     <= IDLE;
+            inst_we   <= 0;
+            mem_state     <= IDLE;
         end else begin
             if (opcode_valid) begin
                 unique case (opcode)
-                    4'b0000: state <= WIPE_ALL; // wipe all (not implemented)
-                    4'b0001: state <= CREATE_VERT_HDR;
-                    4'b0010: state <= CREATE_TRI_HDR;
-                    4'b0011: state <= CREATE_INST;
-                    4'b0100: state <= UPDATE_INST;
+                    4'b0000: mem_state <= WIPE_ALL; // wipe all (not implemented)
+                    4'b0001: mem_state <= CREATE_VERT_HDR;
+                    4'b0010: mem_state <= CREATE_TRI_HDR;
+                    4'b0011: mem_state <= CREATE_INST;
+                    4'b0100: mem_state <= UPDATE_INST;
                 endcase
             end
 
-            case (state)
+            case (mem_state)
                 IDLE: begin
                     vert_we <= 0;
                     tri_we  <= 0;
-                    transform_we <= 0;
+                    inst_we <= 0;
                 end
 
                 CREATE_VERT_HDR: if (vert_hdr_valid) begin
@@ -200,7 +201,7 @@ module raster_mem #(
                     curr_vert_count <= vert_count;
                     vert_ctr        <= 0;
                     vert_addr_wr    <= curr_vert_base;
-                    state           <= CREATE_VERT_DATA;
+                    mem_state           <= CREATE_VERT_DATA;
                 end
 
                 CREATE_VERT_DATA: begin
@@ -211,7 +212,7 @@ module raster_mem #(
                         vert_addr_wr  <= curr_vert_base + vert_ctr;
                         vert_ctr      <= vert_ctr + 1;
                     end else if (vert_ctr == curr_vert_count) begin
-                        state  <= IDLE;
+                        mem_state  <= IDLE;
                     end
                 end
 
@@ -222,7 +223,7 @@ module raster_mem #(
                     curr_tri_count <= tri_count;
                     tri_ctr        <= 0;
                     tri_addr_wr    <= curr_tri_base;
-                    state          <= CREATE_TRI_DATA;
+                    mem_state          <= CREATE_TRI_DATA;
                 end
 
                 CREATE_TRI_DATA: begin
@@ -233,22 +234,20 @@ module raster_mem #(
                         tri_addr_wr <= curr_tri_base + tri_ctr;
                         tri_ctr     <= tri_ctr + 1;
                     end else if (tri_ctr == curr_tri_count) begin
-                        state  <= IDLE;
+                        mem_state  <= IDLE;
                     end
                 end
 
                 CREATE_INST: if (inst_valid) begin
-                    inst_table[inst_id_in].vert_id <= vert_id_in;
-                    inst_table[inst_id_in].tri_id  <= tri_id_in;
-                    transform_din <= transform_in;
-                    transform_we  <= 1;
-                    state         <= IDLE;
+                    inst_din <= {transform_in, vert_id_in, tri_id_in};
+                    inst_we  <= 1;
+                    mem_state    <= IDLE;
                 end
 
                 UPDATE_INST: if (inst_valid) begin
-                    transform_we  <= 1;
-                    transform_din <= transform_in;
-                    state         <= IDLE;
+                    inst_we  <= 1;
+                    inst_din <= {transform_in, inst_dout_a[15:0]};
+                    mem_state    <= IDLE;
                 end
             endcase
         end
@@ -259,11 +258,13 @@ module raster_mem #(
     // ===================================================
     assign vert_out    = vertex_t'(vert_out_r);
     assign idx_tri_out = tri_out_r;
-    
-    assign transform_out       = transform_t'(transform_dout_r);
-    assign curr_vert_base_out  = vert_table[inst_table[inst_id_rd].vert_id].base;
-    assign curr_vert_count_out = vert_table[inst_table[inst_id_rd].vert_id].count;
-    assign curr_tri_base_out   = tri_table[inst_table[inst_id_rd].tri_id].base;
-    assign curr_tri_count_out  = tri_table[inst_table[inst_id_rd].tri_id].count;
+
+    inst_t inst_cast;
+    assign inst_cast = inst_t'(inst_dout_r); // r for register which is used for output
+    assign transform_out       = transform_t'(inst_dout_r[TRANS_W+15:16]);
+    assign curr_vert_base_out  = vert_table[inst_cast.vert_id].base;
+    assign curr_vert_count_out = vert_table[inst_cast.vert_id].count;
+    assign curr_tri_base_out   = tri_table[inst_cast.tri_id].base;
+    assign curr_tri_count_out  = tri_table[inst_cast.tri_id].count;
 
 endmodule
