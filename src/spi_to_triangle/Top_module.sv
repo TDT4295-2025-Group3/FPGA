@@ -6,7 +6,7 @@ import vertex_pkg::*;
 import transform_pkg::*;
 
 module top_raster_system #(
-    parameter MAX_VERT  = 8192, // 2^13 = 8192
+    parameter MAX_VERT  = 8192, // 2^13 = 8192, 16384
     parameter MAX_TRI   = 8192,
     parameter MAX_INST  = 256,
     parameter MAX_VERT_BUF = 256,
@@ -25,24 +25,11 @@ module top_raster_system #(
     input  logic sck,       // SPI clock
     input  logic rst,       // reset
     input  logic CS_n,      // chip select
-    input  logic [3:0] mosi,    // SPI inputs
-    output logic miso,          // SPI output
-
-    // === Frame driver outputs (for observation / next stage) ===
-    input  logic draw_ready,
-    output logic draw_done,
-    output logic draw_valid
-//    output triangle_t tri_out,
-//    output transform_t transform_out
+    inout  logic [3:0] spi_io,   // SPI inputs
+    
+    output triangle_t world_triangle,
+    output transform_t transform_out
 );
-
-    // =============================
-    // Temporary signals
-    // =============================
-    
-    triangle_t tri_out;  
-    transform_t transform_out;
-    
     // =============================
     // Internal signals
     // =============================
@@ -66,12 +53,12 @@ module top_raster_system #(
     logic        inst_valid, inst_id_valid;
     logic [VIDX_W-1:0] vert_id_out;
     logic [TIDX_W-1:0] tri_id_out;
-    logic [TRANS_W-1:0] transform_out_mem;
+    logic [TRANS_W-1:0] transform_out_spi;
     logic [7:0] inst_id_out;
-
     logic [3:0] status;
 
-    // Raster memory frame interface
+    
+    // Raster memory ↔ frame driver
     logic [$clog2(MAX_INST)-1:0] inst_id_rd;
     logic [$clog2(MAX_VERT)-1:0] vert_addr_rd;
     logic [$clog2(MAX_TRI)-1:0] tri_addr_rd;
@@ -82,7 +69,20 @@ module top_raster_system #(
     logic [TIDX_W-1:0] curr_tri_count_out;
     logic [TRI_W-1:0] idx_tri_out;
     vertex_t vert_data_out;
-    transform_t transform_data_out;
+    transform_t transform_out_mem;
+    transform_t camera_out;
+
+    // Frame driver ↔ model/world transform
+    triangle_t world_tri_out;  
+//    transform_t transform_out;
+    logic frame_driver_valid;
+    logic world_ready;
+    
+    // model/world ↔ world/camera
+//    triangle_t world_triangle;
+    logic world_valid;
+    logic camera_rady;
+    logic world_busy;
 
     // =============================
     // SPI front-end
@@ -105,8 +105,7 @@ module top_raster_system #(
     ) u_spi_driver (
         .sck(sck),
         .rst(rst),
-        .mosi(mosi),
-        .miso(miso),
+        .spi_io(spi_io),
         .CS_n(CS_n),
 
         .opcode_valid(opcode_valid),
@@ -128,10 +127,8 @@ module top_raster_system #(
         .inst_id_valid(inst_id_valid),
         .vert_id_out(vert_id_out),
         .tri_id_out(tri_id_out),
-        .transform_out(transform_out_mem),
-        .inst_id_out(inst_id_out),
-
-        .status(status)
+        .transform_out(transform_out_spi),
+        .inst_id_out(inst_id_out)
     );
 
     // =============================
@@ -175,10 +172,8 @@ module top_raster_system #(
         .tri_count(tri_count),
 
         .inst_valid(inst_valid),
-        .transform_in(transform_out_mem),
+        .transform_in(transform_out_spi),
         .inst_id_in(inst_id_out),
-
-        .status(status),
 
         .inst_id_rd(inst_id_rd),
         .vert_addr_rd(vert_addr_rd),
@@ -191,7 +186,7 @@ module top_raster_system #(
 
         .idx_tri_out(idx_tri_out),
         .vert_out(vert_data_out),
-        .transform_out(transform_out)
+        .transform_out(transform_out_mem)
     );
 
     // =============================
@@ -225,17 +220,38 @@ module top_raster_system #(
         .curr_tri_count(curr_tri_count_out),
 
         // Frame driver → next stage
-        .draw_ready(draw_ready),
-        .draw_done(draw_done),
+        .draw_ready(world_ready),
+        .draw_done(frame_driver_valid),
         .draw_valid(draw_valid),
-        .tri_out(tri_out)
+        .tri_out(world_tri_out),
+        .transform_in(transform_out_mem),
+        .transform_out(transform_out),
+        .camera_out(camera_out)
     );
     
-    triangle_t end_node_tri;
-    transform_t end_node_trans;
     
-    assign end_node_tri = tri_out;
-    assign end_node_trans = transform_out;
+    model_world_transformer (
+        .clk(clk),
+        .rst(rst),
+        
+        // communication with frame driver
+        .transform(transform_out),
+        .triangle(world_tri_out),
+        .in_valid(frame_driver_valid),
+        .ready(world_ready),
+        
+        // communication with world to camera
+        .out_triangle(world_triangle),
+        .out_valid(world_valid),
+        .out_ready(1'b0),
+        .busy(world_busy)
+);
+    
+//    triangle_t end_node_tri;
+//    transform_t end_node_trans;
+    
+//    assign end_node_tri = world_triangle;
+//    assign end_node_trans = transform_out;
 
 endmodule
 

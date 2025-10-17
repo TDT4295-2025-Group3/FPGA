@@ -213,7 +213,7 @@ module raster_mem #(
         IDLE, WIPE_ALL, CREATE_VERT_HDR, CREATE_VERT_DATA,
         CREATE_TRI_HDR, CREATE_TRI_DATA,
         CREATE_INST, UPDATE_INST
-    } state;
+    } mem_state;
 
     // ===================================================
     //  SPI-Facing FSM
@@ -225,19 +225,19 @@ module raster_mem #(
             vert_we   <= 0;
             tri_we    <= 0;
             inst_we   <= 0;
-            state     <= IDLE;
+            mem_state     <= IDLE;
         end else begin
             if (opcode_valid) begin
                 unique case (opcode)
-                    4'b0000: state <= WIPE_ALL; // wipe all (not implemented)
-                    4'b0001: state <= CREATE_VERT_HDR;
-                    4'b0010: state <= CREATE_TRI_HDR;
-                    4'b0011: state <= CREATE_INST;
-                    4'b0100: state <= UPDATE_INST;
+                    4'b0000: mem_state <= WIPE_ALL; // wipe all (not implemented)
+                    4'b0001: mem_state <= CREATE_VERT_HDR;
+                    4'b0010: mem_state <= CREATE_TRI_HDR;
+                    4'b0011: mem_state <= CREATE_INST;
+                    4'b0100: mem_state <= UPDATE_INST;
                 endcase
             end
 
-            case (state)
+            case (mem_state)
                 IDLE: begin
                     vert_we <= 0;
                     tri_we  <= 0;
@@ -251,7 +251,7 @@ module raster_mem #(
                     curr_vert_count <= vert_count;
                     vert_ctr        <= 0;
                     vert_addr_wr    <= curr_vert_base;
-                    state           <= CREATE_VERT_DATA;
+                    mem_state           <= CREATE_VERT_DATA;
                 end
 
                 CREATE_VERT_DATA: begin
@@ -262,7 +262,7 @@ module raster_mem #(
                         vert_addr_wr  <= curr_vert_base + vert_ctr;
                         vert_ctr      <= vert_ctr + 1;
                     end else if (vert_ctr == curr_vert_count) begin
-                        state  <= IDLE;
+                        mem_state  <= IDLE;
                     end
                 end
 
@@ -273,7 +273,7 @@ module raster_mem #(
                     curr_tri_count <= tri_count;
                     tri_ctr        <= 0;
                     tri_addr_wr    <= curr_tri_base;
-                    state          <= CREATE_TRI_DATA;
+                    mem_state          <= CREATE_TRI_DATA;
                 end
 
                 CREATE_TRI_DATA: begin
@@ -284,20 +284,20 @@ module raster_mem #(
                         tri_addr_wr <= curr_tri_base + tri_ctr;
                         tri_ctr     <= tri_ctr + 1;
                     end else if (tri_ctr == curr_tri_count) begin
-                        state  <= IDLE;
+                        mem_state  <= IDLE;
                     end
                 end
 
                 CREATE_INST: if (inst_valid) begin
                     inst_din <= {transform_in, vert_id_in, tri_id_in};
                     inst_we  <= 1;
-                    state    <= IDLE;
+                    mem_state    <= IDLE;
                 end
 
                 UPDATE_INST: if (inst_valid) begin
                     inst_we  <= 1;
                     inst_din <= {transform_in, inst_dout_a[15:0]};
-                    state    <= IDLE;
+                    mem_state    <= IDLE;
                 end
             endcase
         end
