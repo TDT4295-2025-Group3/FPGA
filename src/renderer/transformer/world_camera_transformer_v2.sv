@@ -4,19 +4,20 @@ import math_pkg::*;
 import vertex_pkg::*;
 import transform_pkg::*;
 
-module model_world_transformer(
-    input  logic        clk,
-    input  logic        rst,
+// p_cam = R^T * (p_world - C), scale is ignored (camera scale = 1)
+module world_camera_transformer(
+    input  clk,
+    input  rst,
+ 
+    input  transform_t transform,     // camera pose: pos + rot_sin/rot_cos (ZYX)
+    input  triangle_t  triangle,      // world-space triangle
+    input  logic       in_valid,
+    output logic       ready,
 
-    input  transform_t  transform,
-    input  triangle_t   triangle,
-    input  logic        in_valid,
-    output logic        ready,
-
-    output triangle_t   out_triangle,
-    output logic        out_valid,
-    input  logic        out_ready,
-    output logic        busy
+    output triangle_t  out_triangle,  // camera-space triangle
+    output logic       out_valid,
+    input  logic       out_ready,
+    output logic       busy
 );
 
     // Q16.16 multiply with 64-bit intermediate
@@ -42,7 +43,7 @@ module model_world_transformer(
     endfunction
 
     // pipeline registers
-    vertex_t load_v, rot_v, world_v;
+    vertex_t load_v, temp_v, cam_v, compute_v;
     logic [1:0] vert_ctr_in;     // which vertex is currently loading
     logic [1:0] vert_ctr_out;    // which vertex is being written out
     logic [2:0] valid_pipe;      // shift register for pipeline stages  
@@ -114,30 +115,30 @@ module model_world_transformer(
                 valid_pipe[0] <= 0;
             end
         
-            // Rotation, use dot product for rotation, stage 0
+            // Translation, stage 0
             if (valid_pipe[0]) begin
-                rot_v.pos.x <= dot3_q16(R11, R12, R13, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.pos.y <= dot3_q16(R21, R22, R23, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.pos.z <= dot3_q16(R31, R32, R33, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.color <= load_v.color;
+                temp_v.pos.x <= load_v.pos.x - transform.pos.x;
+                temp_v.pos.y <= load_v.pos.y - transform.pos.y;
+                temp_v.pos.z <= load_v.pos.z - transform.pos.z;
+                temp_v.color <= load_v.color;
             end 
-            
-            // Translation, stage 1
+
+            // Rotation, stage 1
             if (valid_pipe[1]) begin
                 // Translate to world coordinates, stage 1
-                world_v.pos.x <= m(rot_v.pos.x, transform.scale.x) + transform.pos.x;
-                world_v.pos.y <= m(rot_v.pos.y, transform.scale.y) + transform.pos.y;
-                world_v.pos.z <= m(rot_v.pos.z, transform.scale.z) + transform.pos.z;
-                world_v.color   <= rot_v.color;
+                cam_v.pos.x <= dot3_q16(R11, R21, R31, temp_v.pos.x, temp_v.pos.y, temp_v.pos.z);
+                cam_v.pos.y <= dot3_q16(R12, R22, R32, temp_v.pos.x, temp_v.pos.y, temp_v.pos.z);
+                cam_v.pos.z <= dot3_q16(R13, R23, R33, temp_v.pos.x, temp_v.pos.y, temp_v.pos.z);
+                cam_v.color   <= temp_v.color;
             end
 
-            // load output triangle, stage 2
+            // Output, stage 2
             out_valid <= 0; 
             if (valid_pipe[2]) begin
                 unique case (vert_ctr_out)
-                    2'd0: out_triangle.v0 <= world_v;
-                    2'd1: out_triangle.v1 <= world_v;
-                    2'd2: out_triangle.v2 <= world_v;
+                    2'd0: out_triangle.v0 <= cam_v;
+                    2'd1: out_triangle.v1 <= cam_v;
+                    2'd2: out_triangle.v2 <= cam_v;
                 endcase
             end
 

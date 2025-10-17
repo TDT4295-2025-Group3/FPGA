@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-`default_nettype none
+`default_nettype wire
 import vertex_pkg::*;
 import math_pkg::*;  // contains project_q16_16(f, x, z_inv) doing Q16.16 * Q16.16 * Q16.16 -> Q16.16 with >>>32 total
 
