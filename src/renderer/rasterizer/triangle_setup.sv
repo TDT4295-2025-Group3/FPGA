@@ -7,7 +7,8 @@ import math_pkg::*;
 
 module triangle_setup #(
     parameter int WIDTH  = 320,
-    parameter int HEIGHT = 240
+    parameter int HEIGHT = 240,
+    parameter bit BACKFACE_CULLING = 1'b1
 ) (
     input  wire logic clk,
     input  wire logic rst,
@@ -177,9 +178,11 @@ module triangle_setup #(
     // Stage 4
     always_comb begin
         logic signed [75:0] denom; // Q64.12
+        logic signed [37:0] area;
         denom = s3_reg.d00*s3_reg.d11 - s3_reg.d01*s3_reg.d01;
+        area  = s3_reg.e0x*s3_reg.e1y - s3_reg.e0y*s3_reg.e1x; // Q32.6
 
-        s4_next.valid      = s3_reg.valid;
+        s4_next.valid      = BACKFACE_CULLING ? s3_reg.valid && (area < 0) : s3_reg.valid;
         s4_next.v0x        = s3_reg.v0x;  s4_next.v0y = s3_reg.v0y;
         s4_next.e0x        = s3_reg.e0x;  s4_next.e0y = s3_reg.e0y;
         s4_next.e1x        = s3_reg.e1x;  s4_next.e1y = s3_reg.e1y;

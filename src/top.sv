@@ -105,7 +105,7 @@ module top (
             if (offset_x >= ($signed(FB_WIDTH) <<< 15))
                 offset_x <= -($signed(FB_WIDTH) <<< 15);
             else
-                offset_x <= offset_x + (32'sd1 <<< 18);
+                offset_x <= offset_x + (32'sd1 <<< 15);
         end
     end
 
