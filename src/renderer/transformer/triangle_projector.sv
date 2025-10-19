@@ -1,8 +1,9 @@
 `timescale 1ns / 1ps
 `default_nettype wire
 import vertex_pkg::*;
-import math_pkg::*;  // contains project_q16_16(f, x, z_inv) doing Q16.16 * Q16.16 * Q16.16 -> Q16.16 with >>>32 total
+import math_pkg::*; 
 
+// module does pinhole projection (no clipping)
 module triangle_projector(
     input  logic clk,
     input  logic rst,

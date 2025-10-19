@@ -250,7 +250,7 @@ module top_raster_system #(
         .transform(transform_out),
         .triangle(world_tri_out),
         .in_valid(frame_driver_valid),
-        .ready(world_ready),
+        .in_ready(world_ready),
         
         // communication with world to camera
         .out_triangle(world_triangle),
@@ -267,7 +267,7 @@ module top_raster_system #(
         .transform(camera_transform),
         .triangle(world_triangle),
         .in_valid(world_valid),
-        .ready(camera_transform_ready),
+        .in_ready(camera_transform_ready),
         
         .out_triangle(camera_triangle),
         .out_valid(camera_valid),
