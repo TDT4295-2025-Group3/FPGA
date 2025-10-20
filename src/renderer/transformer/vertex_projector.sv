@@ -28,7 +28,7 @@ module vertex_projector(
     logic load_div_done; // stage 1, after we have the selected vertex we load z_abs for dividing
     logic latch_done;
     logic proj_done;
-    logic output_done;
+    logic output_pending;
 
     // Divider interface
     logic    div_busy, div_done, div_valid;
@@ -52,14 +52,14 @@ module vertex_projector(
 
     assign z_inv = q16_16_t'(div_val);
     
-    assign busy = load_done || load_div_done || div_busy || latch_done || proj_done || !output_done;
+    assign busy = load_done || load_div_done || div_done || div_busy || latch_done || proj_done || output_pending;
     assign in_ready = !busy ? 1 : 0;
     
     logic load_vert;
     logic [2:0] load_vert_ctr;
     
     // Load vert
-    always_ff @(posedge clk or posedge rst) begin
+    always_ff @(posedge clk) begin
         if (rst) begin
             load_done  <= 0;
             load_done  <= 0;
@@ -114,18 +114,19 @@ module vertex_projector(
             proj_done <= 0;
     end
 
-    // Stage 4: Output triangle
     always_ff @(posedge clk) begin
         if (rst) begin
             out_valid <= 0;
+            output_pending <= 0;
         end else begin
-            out_valid <= 0;
-            output_done <= 0;
-            if (proj_done && out_ready) begin
-                out_vertex  <= proj_v;
-                out_valid   <= 1;
-                output_done <= 1;
+            if (proj_done) begin
+                out_vertex <= proj_v;
+                out_valid <= 1;
+                output_pending <= 1;
+            end else if (out_ready && out_valid) begin
+                out_valid <= 0;
+                output_pending <= 0;
             end
         end
-    end
+end
 endmodule

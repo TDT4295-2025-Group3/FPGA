@@ -5,7 +5,7 @@ import buffer_id_pkg::*;
 import vertex_pkg::*;
 import transform_pkg::*;
 
-module top_raster_tb;
+module tb_top_raster_system;
 
     // Parameters
     localparam MAX_VERT  = 256;
@@ -35,7 +35,7 @@ module top_raster_tb;
     assign spi_io = spi_de ? spi_drive : 4'bz;
 
     logic initial_load_done;
-    triangle_t camera_triangle;
+    triangle_t project_triangle;
 
     // Instantiate DUT
     top_raster_system #(
@@ -60,7 +60,7 @@ module top_raster_tb;
         .spi_io(spi_io),
         
         .initial_load_done(initial_load_done),
-        .camera_triangle(camera_triangle)
+        .project_triangle(project_triangle)
     );
 
     // Clock generation
@@ -119,10 +119,27 @@ module top_raster_tb;
             spi_send_nybble(4'h0);
             spi_send_nybble(4'h3);
 
-            // Send dummy vertex data (just 108 bits = 27 nybbles)
-            repeat (27) spi_send_nybble(4'hA); // Vert 0
-            repeat (27) spi_send_nybble(4'hB); // Vert 1
-            repeat (27) spi_send_nybble(4'hC); // Vert 2
+            // Send dummy vertex data (just 108 bits = 27 nybbles, 8*3 points + 3 colour)
+            // vert 0 pos (0,0,0)
+            repeat (8) spi_send_nybble(0);
+            repeat (8) spi_send_nybble(0);
+            repeat (8) spi_send_nybble(0);
+            repeat (3) spi_send_nybble(4'hA);
+            // vert 0 pos (0,2,0)
+            repeat (8) spi_send_nybble(0);
+            repeat (3) spi_send_nybble(0);
+            repeat (1) spi_send_nybble(2);
+            repeat (4) spi_send_nybble(0);
+            repeat (8) spi_send_nybble(0);
+            repeat (3) spi_send_nybble(4'hB);
+            // vert 0 pos (0,0,2)
+            repeat (8) spi_send_nybble(0);
+            repeat (8) spi_send_nybble(0);
+            repeat (3) spi_send_nybble(0);
+            repeat (1) spi_send_nybble(2);
+            repeat (4) spi_send_nybble(0);
+            repeat (3) spi_send_nybble(4'hC);
+            
             spi_return_result();
 
             // CREATE_TRI test
@@ -144,7 +161,8 @@ module top_raster_tb;
             // finish Sending tri data
             spi_return_result();            
             
-            // Update camera transform to no rotation
+            // Update camera transform to no rotation 
+            // q16_16 numbers
             // pos = (0, 0, 0)
             // sin = (0, 0, 0)
             // cos = (1, 1, 1)
@@ -174,10 +192,39 @@ module top_raster_tb;
             spi_send_opcode(OP_CREATE_INST);
             repeat (2) spi_send_nybble(4'h0);   // Vert id
             repeat (2) spi_send_nybble(4'h0);   // tri id
-            // Transform 96*4 = 384
-            repeat (1) spi_send_nybble(4'hA); 
-            repeat (94) spi_send_nybble(4'hB); 
-            repeat (1) spi_send_nybble(4'hA);  
+            // Transform 32*3*4 = 384 (32 bit: pos, sin, cos, scale)
+            // no rotation transform
+            // Pos 32*3/4 = 24
+            repeat (24) spi_send_nybble(4'h0); 
+            // sin (0,1,0)
+            repeat (8) spi_send_nybble(4'h0); 
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1); 
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (8) spi_send_nybble(4'h0); 
+            // cos(1,0,1)
+            // cos_x 
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            // cos_y
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            // cos_z
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            // scale (1,1,1)
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
             
             spi_return_result();
             
@@ -185,7 +232,8 @@ module top_raster_tb;
             repeat (20) @(posedge sck);
             initial_load_done = 1'b0;
             
-            repeat (30) @(posedge clk);
+            // wait 60 cycles to monitor further pipeline
+            repeat (60) @(posedge clk);
         end
     endtask
 

@@ -3,7 +3,7 @@
 import opcode_defs::*;
 import buffer_id_pkg::*;
 import vertex_pkg::*;
-import transform_pkg::*;
+import transformer_pkg::*;
 
 module top_raster_system #(
     parameter MAX_VERT  = 8192, // 2^13 = 8192, 16384

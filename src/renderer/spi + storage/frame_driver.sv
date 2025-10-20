@@ -34,11 +34,12 @@ module frame_driver #(
 
     // Frame driver → Transform
     input  logic draw_ready,  // transform ready
+    input  logic world_busy,  // don't start new frame while busy
     input  transform_t transform_in,
     output logic draw_done,   // All instances done
     output logic draw_valid,  // valid triangle in output
+    output logic camera_transform_valid,
     output transform_t transform_out,
-    output transform_t camera_out,
     output triangle_t tri_out
     
 );
@@ -52,7 +53,6 @@ module frame_driver #(
     vertex_t v_collect[0:2];
     triangle_t tri_reg;
     transform_t transform_reg;
-    transform_t camera_reg;
 
     // FSM
     enum logic [3:0] {
@@ -80,7 +80,7 @@ module frame_driver #(
             v_collect[1]  <= '0;
             v_collect[2]  <= '0;
             transform_reg <= '0;
-            camera_reg    <= '0;
+            camera_transform_valid  <= '0;
             draw_valid    <= 1'b0;
             tri_addr      <= '0;
             vert_addr     <= '0;
@@ -89,9 +89,10 @@ module frame_driver #(
             draw_done     <= '0;
         end else begin
             // Default outputs per cycle
-            draw_valid <= 1'b0;
+            draw_valid <= '0;
             vert_addr  <= '0;
             tri_addr   <= '0;
+            camera_transform_valid <= '0;
 
             // NP: need to wait +2 cycles: +1 load_addr +1 ram_out, to acces ram data
             case (frame_state)
@@ -151,10 +152,11 @@ module frame_driver #(
                 end
 
                 OUTPUT_TRI: begin
-                    if (rd_inst_id == 0) begin 
-                        camera_reg <= transform_in;
-                        frame_state <= DONE;
-                    end else begin
+                    if (rd_inst_id == 0 && !world_busy) begin 
+                        transform_reg <= transform_in;
+                        camera_transform_valid  <= 1;
+                        frame_state <= IDLE;
+                    end else if (rd_inst_id != 0) begin
                         if (draw_ready) begin
                             tri_reg.v0 <= v_collect[0];
                             tri_reg.v1 <= v_collect[1];
@@ -189,6 +191,5 @@ module frame_driver #(
 
     assign tri_out = tri_reg;
     assign transform_out = transform_reg;
-    assign camera_out    = camera_reg;
 
 endmodule

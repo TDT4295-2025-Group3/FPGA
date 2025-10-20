@@ -2,44 +2,29 @@
 `default_nettype wire
 import math_pkg::*;
 import vertex_pkg::*;
-import transform_pkg::*;
+import transformer_pkg::*;
 
 module model_world_transformer(
     input  logic        clk,
     input  logic        rst,
+    input  logic        camera_transform_valid,
 
     input  transform_t  transform,
     input  triangle_t   triangle,
     input  logic        in_valid,
-    output logic        ready,
+    output logic        in_ready,
 
     output triangle_t   out_triangle,
     output logic        out_valid,
     input  logic        out_ready,
-    output logic        busy
+    output logic        busy,
+    
+    output q16_16_t out_R11, out_R12, out_R13,
+    output q16_16_t out_R21, out_R22, out_R23,
+    output q16_16_t out_R31, out_R32, out_R33,
+    
+    output q16_16_t cam_x, cam_y, cam_z
 );
-
-    // Q16.16 multiply with 64-bit intermediate
-    function automatic q16_16_t m(input q16_16_t a, input q16_16_t b);
-        logic signed [63:0] t;
-        begin t = a * b; m = q16_16_t'(t >>> 16); end
-    endfunction
-
-    // Dot product row·vec, row & vec in Q16.16; accumulate wide, single >>>16
-    function automatic q16_16_t dot3_q16(
-        input q16_16_t ax, input q16_16_t ay, input q16_16_t az,
-        input q16_16_t bx, input q16_16_t by, input q16_16_t bz
-    );
-        logic signed [63:0] p0, p1, p2;
-        logic signed [95:0] acc;
-        begin
-            p0  = ax * bx; // Q32.32
-            p1  = ay * by; // Q32.32
-            p2  = az * bz; // Q32.32
-            acc = $signed({32'sd0,p0}) + $signed({32'sd0,p1}) + $signed({32'sd0,p2});
-            dot3_q16 = q16_16_t'(acc >>> 16);
-        end
-    endfunction
 
     // pipeline registers
     vertex_t load_v, rot_v, world_v;
@@ -60,20 +45,21 @@ module model_world_transformer(
     q16_16_t R21, R22, R23;
     q16_16_t R31, R32, R33;
     always_comb begin
-        R11 = m(cz, cy);
-        R12 = m(m(cz, sy), sx) - m(sz, cx);
-        R13 = m(m(cz, sy), cx) + m(sz, sx);
-        R21 = m(sz, cy);
-        R22 = m(m(sz, sy), sx) + m(cz, cx);
-        R23 = m(m(sz, sy), cx) - m(cz, sx);
+        R11 = mul_transform(cz, cy);
+        R12 = mul_transform(mul_transform(cz, sy), sx) - mul_transform(sz, cx);
+        R13 = mul_transform(mul_transform(cz, sy), cx) + mul_transform(sz, sx);
+        R21 = mul_transform(sz, cy);
+        R22 = mul_transform(mul_transform(sz, sy), sx) + mul_transform(cz, cx);
+        R23 = mul_transform(mul_transform(sz, sy), cx) - mul_transform(cz, sx);
         R31 = -sy;
-        R32 = m(cy, sx);
-        R33 = m(cy, cx);
+        R32 = mul_transform(cy, sx);
+        R33 = mul_transform(cy, cx);
     end
 
     assign busy = |valid_pipe;  // busy if any stage is active
-    assign ready = (vert_ctr_in < 3) && (vert_ctr_out != 2 && out_ready) ? 1 : 0;  // ready at start of triangle
-
+    assign in_ready = (vert_ctr_in < 3) && (vert_ctr_out != 2 && out_ready) ? 1 : 0;  // ready at start of triangle
+    assign ready    = in_ready && !camera_transform_valid;
+    
     // Using a pipeline to maxemise thoughput with valid_pipe controll signal
     // Load vertex
     always_ff @(posedge clk) begin
@@ -116,18 +102,18 @@ module model_world_transformer(
         
             // Rotation, use dot product for rotation, stage 0
             if (valid_pipe[0]) begin
-                rot_v.pos.x <= dot3_q16(R11, R12, R13, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.pos.y <= dot3_q16(R21, R22, R23, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.pos.z <= dot3_q16(R31, R32, R33, load_v.pos.x, load_v.pos.y, load_v.pos.z);
+                rot_v.pos.x <= dot3_transform(R11, R12, R13, load_v.pos.x, load_v.pos.y, load_v.pos.z);
+                rot_v.pos.y <= dot3_transform(R21, R22, R23, load_v.pos.x, load_v.pos.y, load_v.pos.z);
+                rot_v.pos.z <= dot3_transform(R31, R32, R33, load_v.pos.x, load_v.pos.y, load_v.pos.z);
                 rot_v.color <= load_v.color;
             end 
             
             // Translation, stage 1
             if (valid_pipe[1]) begin
                 // Translate to world coordinates, stage 1
-                world_v.pos.x <= m(rot_v.pos.x, transform.scale.x) + transform.pos.x;
-                world_v.pos.y <= m(rot_v.pos.y, transform.scale.y) + transform.pos.y;
-                world_v.pos.z <= m(rot_v.pos.z, transform.scale.z) + transform.pos.z;
+                world_v.pos.x <= mul_transform(rot_v.pos.x, transform.scale.x) + transform.pos.x;
+                world_v.pos.y <= mul_transform(rot_v.pos.y, transform.scale.y) + transform.pos.y;
+                world_v.pos.z <= mul_transform(rot_v.pos.z, transform.scale.z) + transform.pos.z;
                 world_v.color   <= rot_v.color;
             end
 
@@ -147,6 +133,37 @@ module model_world_transformer(
             end else if (valid_pipe[2] && vert_ctr_out < 2) begin
                 vert_ctr_out <= vert_ctr_out +1;
             end
+        end
+    end
+
+    // latch matrix values
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            out_R11 <= 0;
+            out_R12 <= 0;
+            out_R13 <= 0;
+            out_R21 <= 0;
+            out_R22 <= 0;
+            out_R23 <= 0;
+            out_R31 <= 0;
+            out_R32 <= 0;
+            out_R33 <= 0;
+            cam_x <= 0;
+            cam_y <= 0;
+            cam_z <= 0;
+        end else if(camera_transform_valid) begin
+            out_R11 <= R11;
+            out_R12 <= R12;
+            out_R13 <= R13;
+            out_R21 <= R21;
+            out_R22 <= R22;
+            out_R23 <= R23;
+            out_R31 <= R31;
+            out_R32 <= R32;
+            out_R33 <= R33;
+            cam_x <= transform.pos.x;
+            cam_y <= transform.pos.y;
+            cam_z <= transform.pos.z;
         end
     end
 

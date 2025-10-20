@@ -2,6 +2,7 @@ src/math_pkg.sv
 src/color_pkg.sv
 src/vertex_pkg.sv
 src/renderer/rasterizer/rasterizer_pkg.sv
+src/transformer/transformer_pkg.sv
 
 src/divu.sv
 
