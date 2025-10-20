@@ -1,50 +1,27 @@
-`default_nettype none
-`timescale 1ns / 1ps
-
 module inv #(
-    parameter IN_BITS   = 64,  // total input width
-    parameter IN_FBITS  = 0,   // fractional bits in input (0 = integer input)
-    parameter OUT_FBITS = 32   // fractional bits in output (Q0.OUT_FBITS)
+    parameter int IN_BITS   = 64,
+    parameter int IN_FBITS  = 0,
+    parameter int OUT_BITS  = 41,
+    parameter int OUT_FBITS = 35
 )(
-    input  wire logic clk,
-    input  wire logic rst,
-    input  wire logic start,
-    input  wire logic signed [IN_BITS-1:0] x,  // signed fixed-point input
-    output      logic busy,
-    output      logic done,
-    output      logic valid,
-    output      logic dbz,
-    output      logic ovf,
-    output      logic signed [OUT_FBITS-1:0] y   // signed fixed-point output (1/x) in Q0.OUT_FBITS
+    input  wire  logic                       clk, rst, start,
+    input  wire  logic signed [IN_BITS-1:0]  x,   // Q(*).IN_FBITS
+    output       logic                       busy, done, valid, dbz, ovf,
+    output       logic signed [OUT_BITS-1:0] y    // Q(OUT_BITS-OUT_FBITS-1).OUT_FBITS
 );
+    // sign-preserving truncation of x to divider width
+    logic signed [OUT_BITS-1:0] b_in;
+    assign b_in = x;
 
-    localparam WIDTH = IN_BITS; // divider width = input width
-
-    // Numerator scaled by 2^(IN_FBITS)
-    logic signed [WIDTH-1:0] dividend;
-    assign dividend = 1 <<< IN_FBITS;
-
-    logic signed [WIDTH-1:0] quotient;
+    // pre-scale dividend to account for IN_FBITS
+    logic signed [OUT_BITS-1:0] a_in = $signed(1) <<< IN_FBITS;
 
     div #(
-        .WIDTH(WIDTH),
-        .FBITS(OUT_FBITS)
+        .WIDTH (OUT_BITS),
+        .FBITS (OUT_FBITS)
     ) u_div (
-        .clk   (clk),
-        .rst   (rst),
-        .start (start),
-        .busy  (busy),
-        .done  (done),
-        .valid (valid),
-        .dbz   (dbz),
-        .ovf   (ovf),
-        .a     (dividend),
-        .b     (x),
-        .val   (quotient)
+        .clk(clk), .rst(rst), .start(start),
+        .busy(busy), .done(done), .valid(valid), .dbz(dbz), .ovf(ovf),
+        .a(a_in), .b(b_in), .val(y)
     );
-
-    logic signed [WIDTH-1:0] shifted;
-    assign shifted = quotient >>> (WIDTH - OUT_FBITS);
-    assign y = shifted[OUT_FBITS-1:0];
-
 endmodule

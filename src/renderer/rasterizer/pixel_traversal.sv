@@ -7,6 +7,7 @@ module pixel_traversal #(
     parameter int WIDTH  = 320,
     parameter int HEIGHT = 240,
     parameter int SUBPIXEL_BITS = 4,
+    parameter int DENOM_INV_BITS = 36,
     parameter int DENOM_INV_FBITS = 35
 )(  
     input  wire logic            clk,
@@ -15,7 +16,7 @@ module pixel_traversal #(
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y,
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y,
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y,
-    input  wire logic signed [DENOM_INV_FBITS-1:0]  denom_inv,
+    input  wire logic signed [DENOM_INV_BITS-1:0]  denom_inv,
     input  wire logic [$clog2(WIDTH)-1:0]           bbox_min_x, bbox_max_x,
     input  wire logic [$clog2(HEIGHT)-1:0]          bbox_min_y, bbox_max_y,
     input  wire color12_t                           v0_color, v1_color, v2_color,
@@ -28,7 +29,7 @@ module pixel_traversal #(
     output      logic signed [16+SUBPIXEL_BITS-1:0] out_v0x, out_v0y,
     output      logic signed [16+SUBPIXEL_BITS-1:0] out_e0x, out_e0y,
     output      logic signed [16+SUBPIXEL_BITS-1:0] out_e1x, out_e1y,
-    output      logic signed [DENOM_INV_FBITS-1:0]  out_denom_inv,
+    output      logic signed [DENOM_INV_BITS-1:0]  out_denom_inv,
     output      logic [$clog2(WIDTH)-1:0]           out_bbox_min_x, out_bbox_max_x,
     output      logic [$clog2(HEIGHT)-1:0]          out_bbox_min_y, out_bbox_max_y,
     output      color12_t                           out_v0_color, out_v1_color, out_v2_color,
@@ -45,7 +46,7 @@ module pixel_traversal #(
     logic signed [16+SUBPIXEL_BITS-1:0] tri_v0x, tri_v0y;
     logic signed [16+SUBPIXEL_BITS-1:0] tri_e0x, tri_e0y;
     logic signed [16+SUBPIXEL_BITS-1:0] tri_e1x, tri_e1y;
-    logic signed [DENOM_INV_FBITS-1:0]  tri_denom_inv;
+    logic signed [DENOM_INV_BITS-1:0]  tri_denom_inv;
     logic [$clog2(WIDTH)-1:0]           tri_bbox_min_x, tri_bbox_max_x;
     logic [$clog2(HEIGHT)-1:0]          tri_bbox_min_y, tri_bbox_max_y;
     color12_t                           tri_v0_color, tri_v1_color, tri_v2_color;
@@ -104,11 +105,11 @@ module pixel_traversal #(
             end
             RUN: begin
                 if (can_emit) begin
-                    if (current_x + 'd1 < tri_bbox_max_x) begin
+                    if (current_x < tri_bbox_max_x) begin
                         next_x = current_x + 'd1;
                     end else begin
                         next_x = tri_bbox_min_x;
-                        if (current_y + 'd1 < tri_bbox_max_y) begin
+                        if (current_y < tri_bbox_max_y) begin
                             next_y = current_y + 'd1;
                         end else begin
                             next_state = IDLE;

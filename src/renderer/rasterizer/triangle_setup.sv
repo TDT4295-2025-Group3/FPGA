@@ -1,6 +1,3 @@
-`timescale 1ns / 1ps
-`default_nettype none
-
 import vertex_pkg::*;
 import math_pkg::*;
 import color_pkg::*;
@@ -8,6 +5,7 @@ module triangle_setup #(
     parameter int WIDTH  = 320,
     parameter int HEIGHT = 240,
     parameter int SUBPIXEL_BITS = 4,
+    parameter int DENOM_INV_BITS = 36,
     parameter int DENOM_INV_FBITS = 35,
     parameter bit BACKFACE_CULLING = 1'b1
 ) (
@@ -24,7 +22,7 @@ module triangle_setup #(
     output logic signed [16+SUBPIXEL_BITS-1:0] out_v0x, out_v0y,
     output logic signed [16+SUBPIXEL_BITS-1:0] out_e0x, out_e0y,
     output logic signed [16+SUBPIXEL_BITS-1:0] out_e1x, out_e1y,
-    output logic signed [DENOM_INV_FBITS-1:0] out_denom_inv,
+    output logic signed [DENOM_INV_BITS-1:0] out_denom_inv,
     output logic [$clog2(WIDTH)-1:0]  out_bbox_min_x, out_bbox_max_x,
     output logic [$clog2(HEIGHT)-1:0] out_bbox_min_y, out_bbox_max_y,
     output color12_t out_v0_color, out_v1_color, out_v2_color,
@@ -105,11 +103,11 @@ module triangle_setup #(
     logic        inv_valid;
     logic inv_dbz, inv_ovf;
     logic signed [32+2*SUBPIXEL_BITS-1:0] inv_x;
-    logic signed [DENOM_INV_FBITS-1:0] inv_y;
+    logic signed [DENOM_INV_BITS-1:0] inv_y;
 
     // divider output
     logic        div_out_valid;
-    logic signed [DENOM_INV_FBITS-1:0] div_out_data;
+    logic signed [DENOM_INV_BITS-1:0] div_out_data;
 
     // inflight
     logic div_busy;
@@ -132,12 +130,13 @@ module triangle_setup #(
     inv #(
         .IN_BITS(32+2*SUBPIXEL_BITS),
         .IN_FBITS(2*SUBPIXEL_BITS),
+        .OUT_BITS(DENOM_INV_BITS),
         .OUT_FBITS(DENOM_INV_FBITS)
     ) inv_inst (
         .clk   (clk),
         .rst   (rst),
         .start (inv_start),
-        .x     ($signed(inv_x)),
+        .x     (inv_x),
         .busy  (inv_busy),
         .done  (inv_done),
         .valid (inv_valid),
@@ -226,7 +225,16 @@ module triangle_setup #(
     always_comb begin
         logic signed [32+2*SUBPIXEL_BITS-1:0] denom;
         denom  = s3_reg.e0x*s3_reg.e1y - s3_reg.e0y*s3_reg.e1x;
-        s4_next.valid      = BACKFACE_CULLING ? s3_reg.valid && (denom < 0) : s3_reg.valid;
+       // s4_next.valid      = s3_reg.valid;
+        s4_next.valid = s3_reg.valid && (denom != 0) && ((!BACKFACE_CULLING) || (denom < 0));
+        
+           if (s3_reg.valid) begin
+        $display("%t Stage4: denom=%0d, valid=%b, backface_culling=%b, s4_next.valid=%b", 
+                 $time, denom, s3_reg.valid, BACKFACE_CULLING, s4_next.valid);
+    end
+        if (denom == 0 &&  s3_reg.valid) begin
+            $display("%t triangle_setup: WARNING denom is zero!", $time);
+        end
         s4_next.v0x        = s3_reg.v0x;  s4_next.v0y = s3_reg.v0y;
         s4_next.e0x        = s3_reg.e0x;  s4_next.e0y = s3_reg.e0y;
         s4_next.e1x        = s3_reg.e1x;  s4_next.e1y = s3_reg.e1y;

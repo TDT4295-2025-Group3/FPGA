@@ -9,6 +9,7 @@ module rasterizer #(
     parameter int WIDTH  = 320,
     parameter int HEIGHT = 240,
     parameter int SUBPIXEL_BITS = 4,
+    parameter int DENOM_INV_BITS = 36,
     parameter int DENOM_INV_FBITS = 35,
     parameter bit BACKFACE_CULLING = 1'b1
 ) (
@@ -34,7 +35,7 @@ module rasterizer #(
     logic signed [16+SUBPIXEL_BITS-1:0] ts_v0x, ts_v0y;
     logic signed [16+SUBPIXEL_BITS-1:0] ts_e0x, ts_e0y;
     logic signed [16+SUBPIXEL_BITS-1:0] ts_e1x, ts_e1y;
-    logic signed [DENOM_INV_FBITS-1:0]  ts_denom_inv;
+    logic signed [DENOM_INV_BITS-1:0]  ts_denom_inv;
     logic [$clog2(WIDTH)-1:0]           ts_bbox_min_x, ts_bbox_max_x;
     logic [$clog2(HEIGHT)-1:0]          ts_bbox_min_y, ts_bbox_max_y;
     color12_t                           ts_v0_color, ts_v1_color, ts_v2_color;
@@ -48,6 +49,7 @@ module rasterizer #(
         .WIDTH(WIDTH),
         .HEIGHT(HEIGHT),
         .SUBPIXEL_BITS(SUBPIXEL_BITS),
+        .DENOM_INV_BITS(DENOM_INV_BITS),
         .DENOM_INV_FBITS(DENOM_INV_FBITS),
         .BACKFACE_CULLING(BACKFACE_CULLING)
     ) ts_inst (
@@ -81,7 +83,7 @@ module rasterizer #(
     logic signed [16+SUBPIXEL_BITS-1:0] pt_v0x, pt_v0y;
     logic signed [16+SUBPIXEL_BITS-1:0] pt_e0x, pt_e0y;
     logic signed [16+SUBPIXEL_BITS-1:0] pt_e1x, pt_e1y;
-    logic signed [DENOM_INV_FBITS-1:0]  pt_denom_inv;
+    logic signed [DENOM_INV_BITS-1:0]  pt_denom_inv;
     logic [$clog2(WIDTH)-1:0]           pt_bbox_min_x, pt_bbox_max_x;
     logic [$clog2(HEIGHT)-1:0]          pt_bbox_min_y, pt_bbox_max_y;
     color12_t                           pt_v0_color, pt_v1_color, pt_v2_color;
@@ -96,6 +98,7 @@ module rasterizer #(
         .WIDTH(WIDTH),
         .HEIGHT(HEIGHT),
         .SUBPIXEL_BITS(SUBPIXEL_BITS),
+        .DENOM_INV_BITS(DENOM_INV_BITS),
         .DENOM_INV_FBITS(DENOM_INV_FBITS)
     ) pt_inst (
         .clk(clk),
@@ -141,6 +144,7 @@ module rasterizer #(
         .WIDTH(WIDTH),
         .HEIGHT(HEIGHT),
         .SUBPIXEL_BITS(SUBPIXEL_BITS),
+        .DENOM_INV_BITS(DENOM_INV_BITS),
         .DENOM_INV_FBITS(DENOM_INV_FBITS)
     ) pe_inst (
         .clk(clk),
