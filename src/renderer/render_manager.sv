@@ -3,7 +3,10 @@
 
 module render_manager #(
     parameter int WIDTH  = 320,
-    parameter int HEIGHT = 240
+    parameter int HEIGHT = 240,
+    parameter int SUBPIXEL_BITS = 4,
+    parameter int DENOM_INV_FBITS = 35,
+    parameter bit BACKFACE_CULLING = 1'b1
 ) (
     input  wire logic clk,
     input  wire logic rst,
@@ -135,7 +138,10 @@ module render_manager #(
     color12_t rasterizer_color;
     rasterizer #(
         .WIDTH (WIDTH),
-        .HEIGHT(HEIGHT)
+        .HEIGHT(HEIGHT),
+        .SUBPIXEL_BITS(SUBPIXEL_BITS),
+        .DENOM_INV_FBITS(DENOM_INV_FBITS),
+        .BACKFACE_CULLING(BACKFACE_CULLING)
     ) rasterizer_inst (
         .clk(clk),
         .rst(rst),

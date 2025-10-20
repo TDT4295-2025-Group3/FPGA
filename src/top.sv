@@ -142,7 +142,10 @@ module top (
 
     render_manager #(
         .WIDTH (FB_WIDTH),
-        .HEIGHT(FB_HEIGHT)
+        .HEIGHT(FB_HEIGHT),
+        .SUBPIXEL_BITS       (5),
+        .DENOM_INV_FBITS     (41),
+        .BACKFACE_CULLING    (1'b1)
     ) render_mgr_inst (
         .clk              (clk_render),
         .rst              (!btn_rst_n),
