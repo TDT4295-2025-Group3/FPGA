@@ -58,43 +58,18 @@ module triangle_setup #(
         logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y;
         logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y;
         logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] denom; 
         logic [$clog2(WIDTH)-1:0]  bbox_min_x, bbox_max_x;
         logic [$clog2(HEIGHT)-1:0] bbox_min_y, bbox_max_y;
         color12_t     v0_color, v1_color, v2_color;
         q16_16_t      v0_depth, v1_depth, v2_depth;
     } triangle_setup_stage3_t;
 
-    typedef struct packed {
-        logic valid;
-        logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y;
-        logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y;
-        logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y;
-        logic signed [32+2*SUBPIXEL_BITS-1:0] denom; 
-        logic [$clog2(WIDTH)-1:0]  bbox_min_x, bbox_max_x;
-        logic [$clog2(HEIGHT)-1:0] bbox_min_y, bbox_max_y;
-        color12_t     v0_color, v1_color, v2_color;
-        q16_16_t      v0_depth, v1_depth, v2_depth;
-    } triangle_setup_stage4_t;
-
-    typedef struct packed {
-        logic valid;
-        logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y;
-        logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y;
-        logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y;
-        logic signed [32+2*SUBPIXEL_BITS-1:0] div_divisor;   
-        logic [$clog2(WIDTH)-1:0]  bbox_min_x, bbox_max_x;
-        logic [$clog2(HEIGHT)-1:0] bbox_min_y, bbox_max_y;
-        color12_t     v0_color, v1_color, v2_color;
-        q16_16_t      v0_depth, v1_depth, v2_depth;
-    } triangle_setup_stage5_t;
-
     // handshake
-    logic s1_ready, s2_ready, s3_ready, s4_ready, s5_ready;
+    logic s1_ready, s2_ready, s3_ready;
     triangle_setup_stage1_t s1_reg, s1_next;
     triangle_setup_stage2_t s2_reg, s2_next;
     triangle_setup_stage3_t s3_reg, s3_next;
-    triangle_setup_stage4_t s4_reg, s4_next;
-    triangle_setup_stage5_t s5_reg, s5_next;
 
     // inverse module signals
     logic        inv_start;
@@ -111,20 +86,18 @@ module triangle_setup #(
 
     // inflight
     logic div_busy;
-    triangle_setup_stage5_t s5_hold;
+    triangle_setup_stage3_t s3_hold;
 
     // produce flags
     logic produce_div;
 
     // connections
     assign in_ready  = s1_ready;
-    assign busy      = s1_reg.valid || s2_reg.valid || s3_reg.valid || s4_reg.valid || s5_reg.valid || out_valid || div_busy;
+    assign busy      = s1_reg.valid || s2_reg.valid || s3_reg.valid || out_valid || div_busy;
 
     // stage readiness
     assign s1_ready = !s1_reg.valid || s2_ready;
     assign s2_ready = !s2_reg.valid || s3_ready;
-    assign s3_ready = !s3_reg.valid || s4_ready;
-    assign s4_ready = !s4_reg.valid || s5_ready;
 
     // inverse instance (replaces iterative divider)
     inv #(
@@ -201,10 +174,13 @@ module triangle_setup #(
 
     // Stage 3
     always_comb begin
-        s3_next.valid      = s2_reg.valid;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] denom;
+        denom  = s2_reg.e0x*s2_reg.e1y - s2_reg.e0y*s2_reg.e1x;
+        s3_next.valid = s2_reg.valid && (denom != 0) && ((!BACKFACE_CULLING) || (denom < 0));
         s3_next.v0x        = s2_reg.v0x;  s3_next.v0y = s2_reg.v0y;
         s3_next.e0x        = s2_reg.e0x;  s3_next.e0y = s2_reg.e0y;
         s3_next.e1x        = s2_reg.e1x;  s3_next.e1y = s2_reg.e1y;
+        s3_next.denom      = denom;
         s3_next.bbox_min_x = s2_reg.bbox_min_x;
         s3_next.bbox_max_x = s2_reg.bbox_max_x;
         s3_next.bbox_min_y = s2_reg.bbox_min_y;
@@ -216,70 +192,20 @@ module triangle_setup #(
         s3_next.v1_depth   = s2_reg.v1_depth;
         s3_next.v2_depth   = s2_reg.v2_depth;
     end
+    // s3 readiness
+    assign s3_ready = (!s3_reg.valid) || (s3_reg.valid && !div_busy && !inv_busy && !div_out_valid);
     always_ff @(posedge clk or posedge rst) begin
         if (rst) s3_reg <= '0;
         else if (s3_ready) s3_reg <= s3_next;
     end
 
-    // Stage 4
-    always_comb begin
-        logic signed [32+2*SUBPIXEL_BITS-1:0] denom;
-        denom  = s3_reg.e0x*s3_reg.e1y - s3_reg.e0y*s3_reg.e1x;
-        s4_next.valid = s3_reg.valid && (denom != 0) && ((!BACKFACE_CULLING) || (denom < 0));
-        s4_next.v0x        = s3_reg.v0x;  s4_next.v0y = s3_reg.v0y;
-        s4_next.e0x        = s3_reg.e0x;  s4_next.e0y = s3_reg.e0y;
-        s4_next.e1x        = s3_reg.e1x;  s4_next.e1y = s3_reg.e1y;
-        s4_next.denom      = denom;
-        s4_next.bbox_min_x = s3_reg.bbox_min_x;
-        s4_next.bbox_max_x = s3_reg.bbox_max_x;
-        s4_next.bbox_min_y = s3_reg.bbox_min_y;
-        s4_next.bbox_max_y = s3_reg.bbox_max_y;
-        s4_next.v0_color   = s3_reg.v0_color;
-        s4_next.v1_color   = s3_reg.v1_color;
-        s4_next.v2_color   = s3_reg.v2_color;
-        s4_next.v0_depth   = s3_reg.v0_depth;
-        s4_next.v1_depth   = s3_reg.v1_depth;
-        s4_next.v2_depth   = s3_reg.v2_depth;
-    end
-    always_ff @(posedge clk or posedge rst) begin
-        if (rst) s4_reg <= '0;
-        else if (s4_ready) s4_reg <= s4_next;
-    end
-
-    // Stage 5
-    always_comb begin
-        s5_next.valid       = s4_reg.valid;
-        s5_next.v0x         = s4_reg.v0x;  s5_next.v0y = s4_reg.v0y;
-        s5_next.e0x         = s4_reg.e0x;  s5_next.e0y = s4_reg.e0y;
-        s5_next.e1x         = s4_reg.e1x;  s5_next.e1y = s4_reg.e1y;
-        s5_next.div_divisor = s4_reg.denom;
-        s5_next.bbox_min_x  = s4_reg.bbox_min_x;
-        s5_next.bbox_max_x  = s4_reg.bbox_max_x;
-        s5_next.bbox_min_y  = s4_reg.bbox_min_y;
-        s5_next.bbox_max_y  = s4_reg.bbox_max_y;
-        s5_next.v0_color    = s4_reg.v0_color;
-        s5_next.v1_color    = s4_reg.v1_color;
-        s5_next.v2_color    = s4_reg.v2_color;
-        s5_next.v0_depth    = s4_reg.v0_depth;
-        s5_next.v1_depth    = s4_reg.v1_depth;
-        s5_next.v2_depth    = s4_reg.v2_depth;
-    end
-
-
     // inverse IO mapping
-    assign inv_x     = s5_reg.div_divisor; // denominator as input
+    assign inv_x     = s3_reg.denom; // denominator as input
 
     logic launch_inv;
-    assign launch_inv = s5_reg.valid && !div_busy && !inv_busy && !div_out_valid;
+    assign launch_inv = s3_reg.valid && !div_busy && !inv_busy && !div_out_valid;
 
     assign inv_start = launch_inv;
-
-    // s5 readiness
-    assign s5_ready =  (!s5_reg.valid) || launch_inv;
-    always_ff @(posedge clk or posedge rst) begin
-        if (rst) s5_reg <= '0;
-        else if (!s5_reg.valid || launch_inv) s5_reg <= s5_next;
-    end
 
     // One-deep result buffer (skid)
     always_ff @(posedge clk or posedge rst) begin
@@ -310,32 +236,32 @@ module triangle_setup #(
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             div_busy <= 1'b0;
-            s5_hold  <= '0;
+            s3_hold  <= '0;
             out_valid  <= 1'b0;
         end else begin
             if (launch_inv) begin
-                s5_hold  <= s5_reg;
+                s3_hold  <= s3_reg;
                 div_busy <= 1'b1;
             end
 
             if (produce_div) begin
-                out_v0x        <= s5_hold.v0x;
-                out_v0y        <= s5_hold.v0y;
-                out_e0x        <= s5_hold.e0x;
-                out_e0y        <= s5_hold.e0y;
-                out_e1x        <= s5_hold.e1x;
-                out_e1y        <= s5_hold.e1y;
+                out_v0x        <= s3_hold.v0x;
+                out_v0y        <= s3_hold.v0y;
+                out_e0x        <= s3_hold.e0x;
+                out_e0y        <= s3_hold.e0y;
+                out_e1x        <= s3_hold.e1x;
+                out_e1y        <= s3_hold.e1y;
                 out_denom_inv  <= div_out_data;
-                out_bbox_min_x <= s5_hold.bbox_min_x;
-                out_bbox_max_x <= s5_hold.bbox_max_x;
-                out_bbox_min_y <= s5_hold.bbox_min_y;
-                out_bbox_max_y <= s5_hold.bbox_max_y;
-                out_v0_color   <= s5_hold.v0_color;
-                out_v1_color   <= s5_hold.v1_color;
-                out_v2_color   <= s5_hold.v2_color;
-                out_v0_depth   <= s5_hold.v0_depth;
-                out_v1_depth   <= s5_hold.v1_depth;
-                out_v2_depth   <= s5_hold.v2_depth;
+                out_bbox_min_x <= s3_hold.bbox_min_x;
+                out_bbox_max_x <= s3_hold.bbox_max_x;
+                out_bbox_min_y <= s3_hold.bbox_min_y;
+                out_bbox_max_y <= s3_hold.bbox_max_y;
+                out_v0_color   <= s3_hold.v0_color;
+                out_v1_color   <= s3_hold.v1_color;
+                out_v2_color   <= s3_hold.v2_color;
+                out_v0_depth   <= s3_hold.v0_depth;
+                out_v1_depth   <= s3_hold.v1_depth;
+                out_v2_depth   <= s3_hold.v2_depth;
                 div_busy           <= 1'b0;
             end
             
