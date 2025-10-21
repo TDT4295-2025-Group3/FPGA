@@ -96,8 +96,6 @@ module double_framebuffer #(
         read_data_B <= framebufferB[read_addr];
     end
 
-    always_ff @(posedge clk_read) begin
-        read_data <= (fb_read_select == FB_A) ? read_data_A : read_data_B;
-    end
+       assign read_data = (fb_read_select == FB_A) ? read_data_A : read_data_B;
 
 endmodule

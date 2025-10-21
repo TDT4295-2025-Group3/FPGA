@@ -69,22 +69,8 @@ module top (
 
     logic [11:0] fb_read_data;
 
-    always_ff @(posedge clk_pix or negedge btn_rst_n) begin
-        if (!btn_rst_n) begin
-            fb_read_x <= 8'd0;
-            fb_read_y <= 7'd0;
-        end else begin
-            if (sx < (FB_WIDTH << 2))
-                fb_read_x <= sx[9:2];
-            else
-                fb_read_x <= FB_WIDTH-1;
-
-            if (sy < (FB_HEIGHT << 2))
-                fb_read_y <= sy[8:2];
-            else
-                fb_read_y <= FB_HEIGHT-1;
-        end
-    end
+    assign fb_read_x = sx[9:2];
+    assign fb_read_y = sy[8:2];
     
     // ----------------------------------------------------------------
     // Renderer outputs (render_manager -> depthbuffer)
@@ -111,7 +97,7 @@ module top (
     triangle_t feeder_tri;
     logic feeder_valid, feeder_busy;
 
-    q16_16_t offset_x, offset_y;
+   q16_16_t offset_x, offset_y;
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
             offset_x <= -($signed(FB_WIDTH) <<< 15);
@@ -126,12 +112,16 @@ module top (
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
             offset_y <= 11'd0;
-        else
-            offset_y <= 11'd0;
+        else if (begin_frame) begin
+                if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
+                    offset_y <= 11'd0;
+                else
+                    offset_y <= offset_y + (32'sd1 <<< 13);
+            end
     end
 
     triangle_feeder #(
-        .N_TRIS(968),
+        .N_TRIS(430),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
@@ -148,11 +138,15 @@ module top (
     // ----------------------------------------------------------------
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
-    localparam color12_t CLEAR_COLOR = 12'h9d5;
+    localparam color12_t CLEAR_COLOR = 12'h223;
 
     render_manager #(
         .WIDTH (FB_WIDTH),
-        .HEIGHT(FB_HEIGHT)
+        .HEIGHT(FB_HEIGHT),
+        .SUBPIXEL_BITS       (3),
+        .DENOM_INV_BITS      (36),
+        .DENOM_INV_FBITS     (32),
+        .BACKFACE_CULLING    (1'b1)
     ) render_mgr_inst (
         .clk              (clk_render),
         .rst              (!btn_rst_n),
