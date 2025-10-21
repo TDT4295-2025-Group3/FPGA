@@ -83,26 +83,34 @@ module pixel_eval #(
     typedef struct packed {
         logic        valid;
         pixel_state_t pixel;
+        q16_16_t     v_w, w_w, u_w;
+    } pixel_eval_stage5_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
         color12_t    color;
         q16_16_t     depth;
     } pixel_output_t;
 
     // handshake
-    logic s1_ready, s2_ready, s3_ready, s4_ready, s5_ready;
+    logic s1_ready, s2_ready, s3_ready, s4_ready, s5_ready, s6_ready;
     pixel_eval_stage1_t s1_reg, s1_next;
     pixel_eval_stage2_t s2_reg, s2_next;
     pixel_eval_stage3_t s3_reg, s3_next;
     pixel_eval_stage4_t s4_reg, s4_next;
-    pixel_output_t      s5_reg, s5_next;
+    pixel_eval_stage5_t s5_reg, s5_next;
+    pixel_output_t      s6_reg, s6_next;
 
     assign s1_ready = !s1_reg.valid || s2_ready;
     assign s2_ready = !s2_reg.valid || s3_ready;
     assign s3_ready = !s3_reg.valid || s4_ready;
     assign s4_ready = !s4_reg.valid || s5_ready;
-    assign s5_ready = !s5_reg.valid || out_ready;
+    assign s5_ready = !s5_reg.valid || s6_ready;
+    assign s6_ready = !s6_reg.valid || out_ready;
 
     assign in_ready = s1_ready;
-    assign busy     = s1_reg.valid || s2_reg.valid || s3_reg.valid || s4_reg.valid || s5_reg.valid || out_valid;
+    assign busy     = s1_reg.valid || s2_reg.valid || s3_reg.valid || s4_reg.valid || s5_reg.valid || s6_reg.valid || out_valid;
 
     // Stage 1
     always_comb begin
@@ -222,7 +230,7 @@ module pixel_eval #(
         else if (s4_ready) s4_reg <= s4_next;
     end
 
-    // Stage 5: weights, interpolation with signed denom_inv (1/denom)
+    // Stage 5: weights, with signed denom_inv (1/denom)
     localparam int WEIGHT_SHIFT = 2*SUBPIXEL_BITS + DENOM_INV_FBITS - 16;
 
     // 2SUBPIXEL_BITS + DENOM_FINV_BITS -> 16
@@ -231,6 +239,8 @@ module pixel_eval #(
     always_comb begin
         s5_next.valid = s4_reg.valid & s4_reg.is_inside;
         s5_next.pixel = s4_reg.pixel;
+
+        v_w = '0; w_w = '0; u_w = '0;
 
         if (s4_reg.is_inside) begin
             // Signed multiply: num * (1/denom). For interior pixels this is >=0.
@@ -248,39 +258,55 @@ module pixel_eval #(
                 w_w = q16_16_t'(w_mul <<< (-WEIGHT_SHIFT));
             end
 
-            // // guard against tiny negative due to ties/rounding
+            // guard against tiny negative due to ties/rounding
             if ($signed(v_w) < 0) v_w = '0;
             if ($signed(w_w) < 0) w_w = '0;
 
             u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
             if ($signed(u_w) < 0) u_w = '0;
-
-            // interpolate color (RGB444) and depth (Q16.16)
-            s5_next.color[11:8] = ((u_w * $unsigned(s4_reg.pixel.v0_color[11:8])) +
-                                   (v_w * $unsigned(s4_reg.pixel.v1_color[11:8])) +
-                                   (w_w * $unsigned(s4_reg.pixel.v2_color[11:8])) + 32'h0000_8000) >>> 16;
-
-            s5_next.color[7:4]  = ((u_w * $unsigned(s4_reg.pixel.v0_color[7:4])) +
-                                   (v_w * $unsigned(s4_reg.pixel.v1_color[7:4])) +
-                                   (w_w * $unsigned(s4_reg.pixel.v2_color[7:4])) + 32'h0000_8000) >>> 16;
-
-            s5_next.color[3:0]  = ((u_w * $unsigned(s4_reg.pixel.v0_color[3:0])) +
-                                   (v_w * $unsigned(s4_reg.pixel.v1_color[3:0])) +
-                                   (w_w * $unsigned(s4_reg.pixel.v2_color[3:0])) + 32'h0000_8000) >>> 16;
-
-            s5_next.depth       = ((u_w * s4_reg.pixel.v0_depth) +
-                                   (v_w * s4_reg.pixel.v1_depth) +
-                                   (w_w * s4_reg.pixel.v2_depth) + 32'h0000_8000) >>> 16;
-        end else begin
-            s5_next.color = '0;
-            s5_next.depth = '0;
         end
-    end
 
-    // Stage 5 reg (output register)
+        s5_next.v_w = v_w;
+        s5_next.w_w = w_w;
+        s5_next.u_w = u_w;
+    end
     always_ff @(posedge clk or posedge rst) begin
         if (rst) s5_reg <= '0;
         else if (s5_ready) s5_reg <= s5_next;
+    end
+
+    // Stage 6: interpolation using precomputed weights
+    always_comb begin
+        s6_next.valid = s5_reg.valid;
+        s6_next.pixel = s5_reg.pixel;
+
+        if (s5_reg.valid) begin
+            // interpolate color (RGB444) and depth (Q16.16)
+            s6_next.color[11:8] = ((s5_reg.u_w * $unsigned(s5_reg.pixel.v0_color[11:8])) +
+                                   (s5_reg.v_w * $unsigned(s5_reg.pixel.v1_color[11:8])) +
+                                   (s5_reg.w_w * $unsigned(s5_reg.pixel.v2_color[11:8])) + 32'h0000_8000) >>> 16;
+
+            s6_next.color[7:4]  = ((s5_reg.u_w * $unsigned(s5_reg.pixel.v0_color[7:4])) +
+                                   (s5_reg.v_w * $unsigned(s5_reg.pixel.v1_color[7:4])) +
+                                   (s5_reg.w_w * $unsigned(s5_reg.pixel.v2_color[7:4])) + 32'h0000_8000) >>> 16;
+
+            s6_next.color[3:0]  = ((s5_reg.u_w * $unsigned(s5_reg.pixel.v0_color[3:0])) +
+                                   (s5_reg.v_w * $unsigned(s5_reg.pixel.v1_color[3:0])) +
+                                   (s5_reg.w_w * $unsigned(s5_reg.pixel.v2_color[3:0])) + 32'h0000_8000) >>> 16;
+
+            s6_next.depth       = ((s5_reg.u_w * s5_reg.pixel.v0_depth) +
+                                   (s5_reg.v_w * s5_reg.pixel.v1_depth) +
+                                   (s5_reg.w_w * s5_reg.pixel.v2_depth) + 32'h0000_8000) >>> 16;
+        end else begin
+            s6_next.color = '0;
+            s6_next.depth = '0;
+        end
+    end
+
+    // Stage 6 reg (output register)
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) s6_reg <= '0;
+        else if (s6_ready) s6_reg <= s6_next;
     end
 
     // outputs
@@ -292,11 +318,11 @@ module pixel_eval #(
             out_color <= '0;
             out_depth <= '0;
         end else if (!out_valid || out_ready) begin
-            out_valid <= s5_reg.valid;
-            out_x     <= s5_reg.pixel.x;
-            out_y     <= s5_reg.pixel.y;
-            out_color <= s5_reg.color;
-            out_depth <= s5_reg.depth;
+            out_valid <= s6_reg.valid;
+            out_x     <= s6_reg.pixel.x;
+            out_y     <= s6_reg.pixel.y;
+            out_color <= s6_reg.color;
+            out_depth <= s6_reg.depth;
         end
     end
 endmodule
