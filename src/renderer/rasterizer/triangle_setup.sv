@@ -225,16 +225,7 @@ module triangle_setup #(
     always_comb begin
         logic signed [32+2*SUBPIXEL_BITS-1:0] denom;
         denom  = s3_reg.e0x*s3_reg.e1y - s3_reg.e0y*s3_reg.e1x;
-       // s4_next.valid      = s3_reg.valid;
         s4_next.valid = s3_reg.valid && (denom != 0) && ((!BACKFACE_CULLING) || (denom < 0));
-        
-           if (s3_reg.valid) begin
-        $display("%t Stage4: denom=%0d, valid=%b, backface_culling=%b, s4_next.valid=%b", 
-                 $time, denom, s3_reg.valid, BACKFACE_CULLING, s4_next.valid);
-    end
-        if (denom == 0 &&  s3_reg.valid) begin
-            $display("%t triangle_setup: WARNING denom is zero!", $time);
-        end
         s4_next.v0x        = s3_reg.v0x;  s4_next.v0y = s3_reg.v0y;
         s4_next.e0x        = s3_reg.e0x;  s4_next.e0y = s3_reg.e0y;
         s4_next.e1x        = s3_reg.e1x;  s4_next.e1y = s3_reg.e1y;
@@ -246,22 +237,6 @@ module triangle_setup #(
         s4_next.v0_color   = s3_reg.v0_color;
         s4_next.v1_color   = s3_reg.v1_color;
         s4_next.v2_color   = s3_reg.v2_color;
-        // if (BACKFACE_CULLING) begin
-        //     // denom < 0 => not culled -> blue, otherwise -> red
-        //     if (denom < 0) begin
-        //     s4_next.v0_color   = 12'h00F; // R=0 G=0 B=F (blue)
-        //     s4_next.v1_color   = 12'h00F;
-        //     s4_next.v2_color   = 12'h00F;
-        //     end else begin
-        //     s4_next.v0_color   = 12'hF00; // R=F G=0 B=0 (red)
-        //     s4_next.v1_color   = 12'hF00;
-        //     s4_next.v2_color   = 12'hF00;
-        //     end
-        // end else begin
-        //     s4_next.v0_color   = s3_reg.v0_color;
-        //     s4_next.v1_color   = s3_reg.v1_color;
-        //     s4_next.v2_color   = s3_reg.v2_color;
-        // end
         s4_next.v0_depth   = s3_reg.v0_depth;
         s4_next.v1_depth   = s3_reg.v1_depth;
         s4_next.v2_depth   = s3_reg.v2_depth;
@@ -317,10 +292,10 @@ module triangle_setup #(
                 div_out_data  <= inv_y;
             end
 
-            if (inv_done && !inv_valid) begin
-                if (inv_dbz) $display("%t triangle_setup: DROP due to division by zero", $time);
-                if (inv_ovf) $display("%t triangle_setup: DROP due to overflow", $time);
-            end
+            // if (inv_done && !inv_valid) begin
+            //     if (inv_dbz) $display("%t triangle_setup: DROP due to division by zero", $time);
+            //     if (inv_ovf) $display("%t triangle_setup: DROP due to overflow", $time);
+            // end
 
             if (div_out_valid && (!out_valid || out_ready)) begin
                 div_out_valid <= 1'b0;

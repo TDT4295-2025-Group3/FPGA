@@ -121,7 +121,7 @@ module top (
     end
 
     triangle_feeder #(
-        .N_TRIS(995),
+        .N_TRIS(430),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
@@ -143,9 +143,9 @@ module top (
     render_manager #(
         .WIDTH (FB_WIDTH),
         .HEIGHT(FB_HEIGHT),
-        .SUBPIXEL_BITS       (9),
-        .DENOM_INV_BITS      (41),
-        .DENOM_INV_FBITS     (35),
+        .SUBPIXEL_BITS       (3),
+        .DENOM_INV_BITS      (36),
+        .DENOM_INV_FBITS     (32),
         .BACKFACE_CULLING    (1'b1)
     ) render_mgr_inst (
         .clk              (clk_render),
