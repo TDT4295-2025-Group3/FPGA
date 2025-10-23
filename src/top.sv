@@ -139,6 +139,21 @@ module top (
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
     localparam color12_t CLEAR_COLOR = 12'h223;
+    q16_16_t    focal_length;
+    transform_t camera_transform;
+    transform_t transform;
+
+    // FOV ~ arctan((W/2)/f). With W=160, f=100px ≈ 40–45° half-FOV → good.
+    assign focal_length                 = 32'h0064_0000; // 100.0
+    assign camera_transform.pos         = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
+    assign camera_transform.rot_sin     = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
+    assign camera_transform.rot_cos     = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
+    assign camera_transform.scale       = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
+
+    assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
+    assign transform.rot_sin            = '{x:32'h0000_8000, y:32'hFFFF_8000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
+    assign transform.rot_cos            = '{x:32'h0000_DDB4, y:32'h0000_DDB4, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1) 
+    assign transform.scale              = '{x:32'h0000_199A, y:32'h0000_199A, z:32'h0000_199A}; // scale = (0.1, 0.1, 0.1)
 
     render_manager #(
         .WIDTH (FB_WIDTH),
@@ -153,6 +168,10 @@ module top (
 
         .begin_frame      (frame_start_render),
 
+        .focal_length     (focal_length),
+        .camera_transform (camera_transform),
+
+        .transform        (transform),
         .triangle         (feeder_tri),
         .triangle_valid   (feeder_valid),
         .triangle_ready   (renderer_ready),

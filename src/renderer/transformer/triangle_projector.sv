@@ -30,6 +30,14 @@ module triangle_projector(
     logic v0_valid;
     logic v1_valid;
     logic v2_valid;
+
+    // Gate child out_ready until all three lanes are valid
+    logic v_all_valid;
+    logic child_out_ready;
+
+    assign v_all_valid     = v0_valid && v1_valid && v2_valid;
+    assign out_valid       = v_all_valid;
+    assign child_out_ready = out_ready && v_all_valid;
     
     vertex_projector
         project_v0 (
@@ -43,7 +51,7 @@ module triangle_projector(
         
         .out_vertex(out_triangle.v0),
         .out_valid(v0_valid),
-        .out_ready(out_ready),
+        .out_ready(child_out_ready),
         .busy(v0_busy)
     );
     
@@ -59,7 +67,7 @@ module triangle_projector(
         
         .out_vertex(out_triangle.v1),
         .out_valid(v1_valid),
-        .out_ready(out_ready),
+        .out_ready(child_out_ready),
         .busy(v1_busy)
     );
     
@@ -75,14 +83,11 @@ module triangle_projector(
         
         .out_vertex(out_triangle.v2),
         .out_valid(v2_valid),
-        .out_ready(out_ready),
+        .out_ready(child_out_ready),
         .busy(v2_busy)
     );
     
-    assign busy = v0_busy || v1_busy || v2_busy;
-    assign in_ready = !busy && out_ready;
-    assign out_valid = v0_valid && v1_valid && v2_valid;
-    
-    
+    assign busy     = v0_busy || v1_busy || v2_busy;
+    assign in_ready = v0_ready && v1_ready && v2_ready;
 
 endmodule

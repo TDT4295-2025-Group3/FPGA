@@ -6,6 +6,12 @@ src/renderer/transformer/transformer_pkg.sv
 src/div.sv
 src/inv.sv
 
+src/renderer/transformer/vertex_projector.sv
+src/renderer/transformer/model_world_transformer.sv
+src/renderer/transformer/world_camera_transformer.sv
+src/renderer/transformer/triangle_projector.sv
+src/renderer/transformer/transformer.sv
+
 src/renderer/rasterizer/triangle_setup.sv
 src/renderer/rasterizer/pixel_traversal.sv
 src/renderer/rasterizer/pixel_eval.sv

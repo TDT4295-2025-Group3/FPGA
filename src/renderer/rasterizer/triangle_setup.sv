@@ -1,6 +1,10 @@
+`default_nettype none
+`timescale 1ns / 1ps
+
 import vertex_pkg::*;
 import math_pkg::*;
 import color_pkg::*;
+
 module triangle_setup #(
     parameter int WIDTH  = 320,
     parameter int HEIGHT = 240,
@@ -176,7 +180,7 @@ module triangle_setup #(
     always_comb begin
         logic signed [32+2*SUBPIXEL_BITS-1:0] denom;
         denom  = s2_reg.e0x*s2_reg.e1y - s2_reg.e0y*s2_reg.e1x;
-        s3_next.valid = s2_reg.valid && (denom != 0) && ((!BACKFACE_CULLING) || (denom < 0));
+        s3_next.valid = s2_reg.valid && (denom != 0) && ((!BACKFACE_CULLING) || (denom > 0));
         s3_next.v0x        = s2_reg.v0x;  s3_next.v0y = s2_reg.v0y;
         s3_next.e0x        = s2_reg.e0x;  s3_next.e0y = s2_reg.e0y;
         s3_next.e1x        = s2_reg.e1x;  s3_next.e1y = s2_reg.e1y;
