@@ -300,7 +300,7 @@ module model_world_transformer(
     output      transform_t  out_camera_transform,
     output      triangle_t   out_triangle,
     output      logic        out_valid,
-    input       logic        out_ready,
+    input wire  logic        out_ready,
 
     output      logic        busy
 );
@@ -347,14 +347,15 @@ module model_world_transformer(
     q16_16_t R11, R12, R13;
     q16_16_t R21, R22, R23;
     q16_16_t R31, R32, R33;
+    q16_16_t cz, sz, cy, sy, cx, sx;
     always_comb begin
         // get sin/cos from transform
-        q16_16_t cz = transform.rot_cos.z;
-        q16_16_t sz = transform.rot_sin.z;
-        q16_16_t cy = transform.rot_cos.y;
-        q16_16_t sy = transform.rot_sin.y;
-        q16_16_t cx = transform.rot_cos.x;
-        q16_16_t sx = transform.rot_sin.x;
+        cz = transform.rot_cos.z;
+        sz = transform.rot_sin.z;
+        cy = transform.rot_cos.y;
+        sy = transform.rot_sin.y;
+        cx = transform.rot_cos.x;
+        sx = transform.rot_sin.x;
 
         R11 = mul_transform(cz, cy);
         R12 = mul_transform(mul_transform(cz, sy), sx) - mul_transform(sz, cx);

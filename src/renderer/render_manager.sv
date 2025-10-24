@@ -14,15 +14,15 @@ module render_manager #(
 
     input wire logic begin_frame,
 
-    input q16_16_t    focal_length,
-    input transform_t camera_transform,
+    input wire q16_16_t    focal_length,
+    input wire transform_t camera_transform,
 
-    input transform_t transform,
-    input triangle_t triangle,
+    input wire transform_t transform,
+    input wire triangle_t triangle,
     input wire logic triangle_valid,
     output logic triangle_ready,
 
-    input color12_t fill_color,
+    input wire color12_t fill_color,
     input wire logic fill_valid,
     output logic fill_ready,
 
