@@ -38,5 +38,36 @@ package transformer_pkg;
         return q16_16_t'(sum >>> 8);
     endfunction
 
+    typedef struct packed {
+        triangle_t model_tri,
+        transform_t_t model_trans,
+        transform_t_t camera_trans,
+        logic model_trans_valid,
+        logic camera_trans_valid
+    } transform_setup_t;
+
+    typedef struct packed {
+        q16_16_t R11,
+        q16_16_t R12,
+        q16_16_t R13,
+        q16_16_t R21,
+        q16_16_t R22,
+        q16_16_t R23,
+        q16_16_t R31,
+        q16_16_t R32,
+        q16_16_t R33
+    } matrix_t;
+
+    typedef struct packed {
+        trianlge_t model_tri,
+        matrix_t model_mtx,
+        matrix_t camera_mtx
+    } model_world_t;
+
+    typedef struct packed {
+        trianlge_t world_tri,
+        matrix_t camera_mtx
+    } 
+
 
 endpackage

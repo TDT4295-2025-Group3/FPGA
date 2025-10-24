@@ -7,7 +7,6 @@ import vertex_pkg::*;
 module frame_driver #(
     parameter MAX_VERT      = 8192, // 2^13 = 8192
     parameter MAX_TRI       = 8192,
-    parameter INST_NR       = 2,
     parameter MAX_VERT_CNT  = 256,
     parameter MAX_TRI_CNT   = 256,
     parameter VTX_W         = 108,
@@ -16,12 +15,14 @@ module frame_driver #(
     parameter TRI_W         = 3*VIDX_W
 )(
     input  logic clk, rst,
-    input  logic initial_load_done, // 
+    
+    // spi driver ↔ frame driver
+    input  logic [7:0] max_inst,
 
     // Memory control
     output logic [$clog2(MAX_VERT)-1:0] vert_addr,
     output logic [$clog2(MAX_TRI)-1:0]  tri_addr,
-    output logic [7:0] rd_inst_id,
+    output logic [7:0] inst_id_rd,
 
     // Memory inputs
     input  vertex_t      vert_in,
@@ -85,7 +86,7 @@ module frame_driver #(
             tri_addr      <= '0;
             vert_addr     <= '0;
             next_inst_id  <= '0;
-            rd_inst_id    <= '0;
+            inst_id_rd    <= '0;
             draw_done     <= '0;
         end else begin
             // Default outputs per cycle
@@ -97,9 +98,9 @@ module frame_driver #(
             // NP: need to wait +2 cycles: +1 load_addr +1 ram_out, to acces ram data
             case (frame_state)
                 IDLE: begin
-                    if (initial_load_done) begin
+                    if (draw_ready) begin
                         next_inst_id <= next_inst_id +1;
-                        rd_inst_id   <= next_inst_id;
+                        inst_id_rd   <= next_inst_id;
                         frame_state <= LOAD_BASE;
                     end
                     draw_done <= 0;
@@ -109,7 +110,7 @@ module frame_driver #(
                 // tansform <= transform_ram[inst_id];
                 LOAD_BASE: begin
                     frame_state <= REQUEST_TRI;
-                    if(rd_inst_id == 0) 
+                    if(inst_id_rd == 0) 
                         frame_state <= OUTPUT_TRI;
                 end
 
@@ -152,11 +153,13 @@ module frame_driver #(
                 end
 
                 OUTPUT_TRI: begin
-                    if (rd_inst_id == 0 && !world_busy) begin 
+                    if (inst_id_rd == 0 && !world_busy) begin 
                         transform_reg <= transform_in;
                         camera_transform_valid  <= 1;
                         frame_state <= IDLE;
-                    end else if (rd_inst_id != 0) begin
+                        if(max_inst == 0)
+                            next_inst_id <= 0;
+                    end else if (inst_id_rd != 0) begin
                         if (draw_ready) begin
                             tri_reg.v0 <= v_collect[0];
                             tri_reg.v1 <= v_collect[1];
@@ -170,7 +173,8 @@ module frame_driver #(
                             end else begin
                                 tri_ctr <= 0;
                                 frame_state <= IDLE;
-                                if(rd_inst_id == INST_NR-1) begin
+                                // If all instances are done stop output
+                                if(inst_id_rd == max_inst) begin
                                     draw_done <= 1;
                                     next_inst_id <= 0;
                                     frame_state <= DONE;

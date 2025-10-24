@@ -28,11 +28,15 @@ module model_world_transformer(
 
     // pipeline registers
     vertex_t load_v, rot_v, world_v;
-    logic [1:0] vert_ctr_in;     // which vertex is currently loading
+    triangle_t out_triangle_r;
+    logic [1:0] load_vert_ctr;
     logic [1:0] vert_ctr_out;    // which vertex is being written out
     logic [2:0] valid_pipe;      // shift register for pipeline stages  
-    logic [2:0] load_vert;
-    logic [1:0] load_vert_ctr;
+    logic       load_vert;
+    logic       pipe_en;
+    logic       triangle_ready;
+    logic       triangle_ready_d;
+    logic       out_valid_r;
 
     // Rotation parameters
     q16_16_t cx, sx, cy, sy, cz, sz;
@@ -56,87 +60,105 @@ module model_world_transformer(
         R33 = mul_transform(cy, cx);
     end
 
-    assign busy = |valid_pipe;  // busy if any stage is active
-    assign in_ready = (vert_ctr_in < 3) && (vert_ctr_out != 2 && out_ready) ? 1 : 0;  // ready at start of triangle
-    assign ready    = in_ready && !camera_transform_valid;
+    assign busy = |valid_pipe || out_valid_r;  // busy if any stage is active
+    assign pipe_en  = out_ready || !valid_pipe[2]; 
+    assign in_ready = pipe_en && !camera_transform_valid ? 1 : 0;
+    assign triangle_ready = valid_pipe[2] && (vert_ctr_out == 2);
     
     // Using a pipeline to maxemise thoughput with valid_pipe controll signal
     // Load vertex
     always_ff @(posedge clk) begin
         if (rst) begin
-            vert_ctr_in   <= 0;
             vert_ctr_out  <= 0;
             load_vert_ctr <= 0;
             load_vert     <= 0;
             load_v        <= 0;
+            out_valid_r   <= 0;
+            rot_v         <= 0;
+            world_v       <= 0;
+            out_triangle  <= 0;
             valid_pipe    <= 3'b000;
         end else begin
+            triangle_ready_d <= triangle_ready;
             // Hold input 3 cycles
-            if(in_valid && ready) begin
+            if(in_valid && in_ready && load_vert_ctr == 0) begin
                 load_vert_ctr <= load_vert_ctr +1;
                 load_vert <= 1;
-            end else if(load_vert)
-                load_vert_ctr <= load_vert_ctr +1;
+            end else if(load_vert && in_ready) begin
                 if(load_vert_ctr == 2) begin
                     load_vert_ctr <= 0;
                     load_vert <= 0; 
+                end else 
+                    load_vert_ctr <= load_vert_ctr +1;
+            end
+            
+            if(load_vert && in_ready) begin
+                if(load_vert_ctr == 2) begin
+                    load_vert_ctr <= 0;
+                    load_vert <= 0;
+                end else begin
+                    load_vert_ctr <= load_vert_ctr + 1;
                 end
+            end 
 
             // shift pipline state
-            valid_pipe <= {valid_pipe[1:0], (in_valid || load_vert) && ready};
+            if(pipe_en) begin
+                valid_pipe <= {valid_pipe[1:0], (in_valid || load_vert) && in_ready};
+                
+                // load next vertex when input valid, stage -1
+                if ((in_valid || load_vert) && in_ready) begin
+                    unique case (load_vert_ctr)
+                        2'd0: load_v <= triangle.v0;
+                        2'd1: load_v <= triangle.v1;
+                        2'd2: load_v <= triangle.v2;
+                        default: load_v <= triangle.v0;
+                    endcase
+                end
             
-            // load next vertex when input valid, stage -1
-            if ((in_valid || load_vert) && ready) begin
-                unique case (vert_ctr_in)
-                    2'd0: load_v <= triangle.v0;
-                    2'd1: load_v <= triangle.v1;
-                    2'd2: load_v <= triangle.v2;
-                endcase
-                vert_ctr_in <= vert_ctr_in + 1;
-            end
+                // Rotation, use dot product for rotation, stage 0
+                if (valid_pipe[0]) begin
+                    rot_v.pos.x <= dot3_transform(R11, R12, R13, load_v.pos.x, load_v.pos.y, load_v.pos.z);
+                    rot_v.pos.y <= dot3_transform(R21, R22, R23, load_v.pos.x, load_v.pos.y, load_v.pos.z);
+                    rot_v.pos.z <= dot3_transform(R31, R32, R33, load_v.pos.x, load_v.pos.y, load_v.pos.z);
+                    rot_v.color <= load_v.color;
+                end 
+                
+                // Translation, stage 1
+                if (valid_pipe[1]) begin
+                    // Translate to world coordinates, stage 1
+                    world_v.pos.x <= mul_transform(rot_v.pos.x, transform.scale.x) + transform.pos.x;
+                    world_v.pos.y <= mul_transform(rot_v.pos.y, transform.scale.y) + transform.pos.y;
+                    world_v.pos.z <= mul_transform(rot_v.pos.z, transform.scale.z) + transform.pos.z;
+                    world_v.color   <= rot_v.color;
+                end
 
-            if (vert_ctr_out == 2) begin
-                vert_ctr_in   <= 0;
-                valid_pipe[0] <= 0;
-            end
-        
-            // Rotation, use dot product for rotation, stage 0
-            if (valid_pipe[0]) begin
-                rot_v.pos.x <= dot3_transform(R11, R12, R13, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.pos.y <= dot3_transform(R21, R22, R23, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.pos.z <= dot3_transform(R31, R32, R33, load_v.pos.x, load_v.pos.y, load_v.pos.z);
-                rot_v.color <= load_v.color;
+                // load output triangle, stage 2
+                if (valid_pipe[2]) begin
+                    unique case (vert_ctr_out)
+                        2'd0: out_triangle_r.v0 <= world_v;
+                        2'd1: out_triangle_r.v1 <= world_v;
+                        2'd2: out_triangle_r.v2 <= world_v;
+                        default: out_triangle_r.v0 <= world_v;
+                    endcase
+                end
+
+                if (vert_ctr_out == 2 && out_ready) begin
+                    vert_ctr_out <= 0;
+                end else if (valid_pipe[2] && vert_ctr_out < 2) begin
+                    vert_ctr_out <= vert_ctr_out +1;
+                end
             end 
             
-            // Translation, stage 1
-            if (valid_pipe[1]) begin
-                // Translate to world coordinates, stage 1
-                world_v.pos.x <= mul_transform(rot_v.pos.x, transform.scale.x) + transform.pos.x;
-                world_v.pos.y <= mul_transform(rot_v.pos.y, transform.scale.y) + transform.pos.y;
-                world_v.pos.z <= mul_transform(rot_v.pos.z, transform.scale.z) + transform.pos.z;
-                world_v.color   <= rot_v.color;
-            end
-
-            // load output triangle, stage 2
-            out_valid <= 0; 
-            if (valid_pipe[2]) begin
-                unique case (vert_ctr_out)
-                    2'd0: out_triangle.v0 <= world_v;
-                    2'd1: out_triangle.v1 <= world_v;
-                    2'd2: out_triangle.v2 <= world_v;
-                endcase
-            end
-
-            if (vert_ctr_out == 2 && out_ready) begin
-                out_valid <= 1;
-                vert_ctr_out <= 0;
-            end else if (valid_pipe[2] && vert_ctr_out < 2) begin
-                vert_ctr_out <= vert_ctr_out +1;
+            if (triangle_ready_d && !out_valid_r) begin
+                out_valid_r <= 1; // triangle assembled this cycle
+                out_triangle <= out_triangle_r;
+            end else if (out_ready && out_valid_r) begin
+                out_valid_r <= 0;
             end
         end
     end
 
-    // latch matrix values
+    // latch matrix values for camera transform to save DSPs
     always_ff @(posedge clk) begin
         if (rst) begin
             out_R11 <= 0;
@@ -166,5 +188,7 @@ module model_world_transformer(
             cam_z <= transform.pos.z;
         end
     end
+
+    assign out_valid = out_valid_r;
 
 endmodule

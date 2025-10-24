@@ -8,7 +8,6 @@ module spi_driver #(
     parameter MAX_VERT  = 8192,     // 2^13 bit = 8192,
     parameter MAX_TRI   = 8192,     // 2^13 bit = 8192,
     parameter MAX_INST  = 256,      // maximum instences
-    parameter MAX_INST_ID  = 2,
     parameter MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
     parameter MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
     
@@ -28,7 +27,7 @@ module spi_driver #(
     inout  logic [3:0] spi_io,  // Octo spi input/output connection (only 4 pins is used)
     input  logic CS_n,          // Chip select, active low
     
-    // SPI packet interface (already de-serialized by SPI front-end)
+    // spi ↔ mcu interface
     output logic        opcode_valid,
     output logic [3:0]  opcode,
 
@@ -44,12 +43,15 @@ module spi_driver #(
     output logic [$clog2(MAX_TRI)-1:0]    tri_base,
     output logic [TIDX_W-1:0]             tri_count,
 
-    // SPI link --> raster memory
+    // spi driver ↔ raster memory
     output logic  inst_valid, inst_id_valid,
     output logic [VIDX_W-1:0]  vert_id_out,
     output logic [TIDX_W-1:0]  tri_id_out,
     output logic [TRANS_W-1:0] transform_out,
-    output logic [7:0] inst_id_out
+    output logic [7:0] inst_id_out,
+    
+    // spi driver ↔ frame driver
+    output logic [7:0] max_inst
     );
     
     // spi tri-state logic
@@ -249,6 +251,7 @@ module spi_driver #(
                             end
                         end
                     end
+                    // might want to handle error status
                     CREATE_INST: begin
                         if (nbl_ctr == (TRANS_W/4)-1) begin
                             transform_out <= {transform_out[TRANS_W-5:0], spi_in};
@@ -265,7 +268,7 @@ module spi_driver #(
                             inst_id_out <= {inst_id_out[3:0], spi_in};
                             nbl_ctr     <= nbl_ctr +1;
                             
-                        end else if({inst_id_out[3:0], spi_in} >= MAX_INST_ID) begin
+                        end else if({inst_id_out[3:0], spi_in} >= MAX_INST) begin
                             error_status <= INVALID_ID;
                             error_flag     <= 1;
                         end else begin
@@ -293,11 +296,12 @@ module spi_driver #(
                         vert_valid <= 0;
                         tri_valid  <= 0;
                         inst_valid <= 0;
-                        if(spi_out_done)
+                        if(spi_out_done) begin
                             spi_state <= STATUS_OUT;
                             spi_out_r <= error_flag ? error_status : OK;
                             error_status <= OK;
                             error_flag   <= 0;
+                        end
                     end
 
                     STATUS_OUT: begin
@@ -309,8 +313,14 @@ module spi_driver #(
         end
     end
     
+    always_ff @(posedge sck or posedge rst) begin
+        if(rst)
+            max_inst <= 0; // there is at least one transform inst 
+        else if (inst_id_out > max_inst)
+            max_inst <= inst_id_out;
+    end
+    
     logic [3:0] ready_ctr;
-
     // Hold read for 8 cycles to remove junk data
     always_ff @(posedge sck) begin
         if(rst) begin
