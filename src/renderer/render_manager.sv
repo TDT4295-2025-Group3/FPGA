@@ -4,6 +4,7 @@
 module render_manager #(
     parameter int WIDTH  = 320,
     parameter int HEIGHT = 240,
+    parameter int FOCAL_LENGTH = 256,
     parameter int SUBPIXEL_BITS = 4,
     parameter int DENOM_INV_BITS = 36,
     parameter int DENOM_INV_FBITS = 35,
@@ -14,11 +15,11 @@ module render_manager #(
 
     input wire logic begin_frame,
 
-    input triangle_t triangle,
+    input wire transform_setup_t transform_setup,
     input wire logic triangle_valid,
     output logic triangle_ready,
 
-    input color12_t fill_color,
+    input wire color12_t fill_color,
     input wire logic fill_valid,
     output logic fill_ready,
 
@@ -64,28 +65,25 @@ module render_manager #(
             FILL: begin
                 next_state = FILL_WAIT;
                 screen_filler_start = 1'b1;
-                $display("Render Manager: Starting screen fill");
             end
 
             FILL_WAIT: begin
                 if (!screen_filler_busy && triangle_valid) begin
                     next_state = TRIANGLE;
-                    $display("Render Manager: Switching to TRIANGLE state");
                 end
             end
 
             TRIANGLE: begin
                 if (begin_frame) begin
                     next_state = FILL;
-                    $display("Render Manager: Switching to FILL state");
                 end
             end
             default: next_state = FILL;
         endcase
     end
 
-    assign triangle_ready = (state == TRIANGLE) ? rasterizer_in_ready : 1'b0;
-    assign busy = (state != TRIANGLE) ? screen_filler_busy : rasterizer_busy;
+    assign triangle_ready = (state == TRIANGLE) ? transformer_in_ready : 1'b0;
+    assign busy = (state != TRIANGLE) ? screen_filler_busy : (rasterizer_busy || transformer_busy);
 
     always_comb begin
         if (state != TRIANGLE) begin
@@ -132,8 +130,48 @@ module render_manager #(
     assign screen_filler_depth = 32'h7FFF_FFFF; // max signed depth
 
 
+    // --- transformer wiring (triangle -> transformer -> rasterizer) ---
+    logic        transformer_in_valid, transformer_in_ready, transformer_out_valid, transformer_out_ready, transformer_busy;
+    triangle_t   transformer_out_triangle;
+
+    // latch per-triangle parameters on handshake so they change atomically with the triangle
+    transform_setup_t  transform_setup_reg;
+
+    assign transformer_in_valid = (state == TRIANGLE) ? triangle_valid : 1'b0;
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            transform_setup_reg <= '0;
+        end else if (transformer_in_valid && transformer_in_ready) begin
+            transform_setup_reg <= transform_setup;
+        end
+    end
+
+    transformer #(
+        .WIDTH(WIDTH),
+        .HEIGHT(HEIGHT),
+        .FOCAL_LENGTH(FOCAL_LENGTH)
+    ) transformer_inst (
+        .clk(clk),
+        .rst(rst),
+
+        .transform_setup(transform_setup),
+
+        .in_valid(transformer_in_valid),
+        .in_ready(transformer_in_ready),
+
+        .out_triangle(transformer_out_triangle),
+        .out_valid(transformer_out_valid),
+        .out_ready(transformer_out_ready),
+
+        .busy(transformer_busy)
+    );
+
+    // rasterizer now consumes the transformer's output
     logic rasterizer_in_valid, rasterizer_in_ready, rasterizer_busy, rasterizer_out_valid;
-    assign rasterizer_in_valid = (state == TRIANGLE) ? triangle_valid: 1'b0;
+    assign rasterizer_in_valid = (state == TRIANGLE) ? transformer_out_valid : 1'b0;
+    assign transformer_out_ready = rasterizer_in_ready;
+
     logic [15:0]  rasterizer_x, rasterizer_y;
     q16_16_t rasterizer_depth;
     color12_t rasterizer_color;
@@ -152,9 +190,9 @@ module render_manager #(
         .in_ready(rasterizer_in_ready),
         .busy    (rasterizer_busy),
 
-        .v0(triangle.v0),
-        .v1(triangle.v1),
-        .v2(triangle.v2),
+        .v0(transformer_out_triangle.v0),
+        .v1(transformer_out_triangle.v1),
+        .v2(transformer_out_triangle.v2),
 
         .out_pixel_x(rasterizer_x),
         .out_pixel_y(rasterizer_y),
@@ -165,9 +203,3 @@ module render_manager #(
     );
 
 endmodule
-
-
-
-
-// triangle, model_transform, camera_transform
-// transform to world -> transform to camera -> project to screen

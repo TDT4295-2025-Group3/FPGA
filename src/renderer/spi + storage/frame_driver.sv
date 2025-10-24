@@ -25,7 +25,8 @@ module frame_driver #(
     output logic [7:0] inst_id_rd,
 
     // Memory inputs
-    input  vertex_t      vert_in,
+    input  transform_t       transform_in,
+    input  vertex_t          vert_in,
     input  logic [TRI_W-1:0] idx_tri,
 
     // Instance descriptor
@@ -33,15 +34,14 @@ module frame_driver #(
     input  logic [$clog2(MAX_TRI)-1:0]   curr_tri_base,
     input  logic [TIDX_W-1:0]            curr_tri_count,
 
-    // Frame driver → Transform
-    input  logic draw_ready,  // transform ready
+    // Frame driver ↔ Transform
+    input  logic in_ready,  // transform setup ready
+    output logic out_valid, // used for when the whole setup is valid 
+    output transform_setup_t transform_setup,
+
+    // Frame driver ↔ rasterdizer (when done)!!
     input  logic world_busy,  // don't start new frame while busy
-    input  transform_t transform_in,
     output logic draw_done,   // All instances done
-    output logic draw_valid,  // valid triangle in output
-    output logic camera_transform_valid,
-    output transform_t transform_out,
-    output triangle_t tri_out
     
 );
 
@@ -52,8 +52,8 @@ module frame_driver #(
 
     logic [TRI_W-1:0] idx_tri_reg;
     vertex_t v_collect[0:2];
-    triangle_t tri_reg;
-    transform_t transform_reg;
+    triangle_t tri_r;
+    transform_setup_t transform_setup_r;
 
     // FSM
     enum logic [3:0] {
@@ -154,18 +154,18 @@ module frame_driver #(
 
                 OUTPUT_TRI: begin
                     if (inst_id_rd == 0 && !world_busy) begin 
-                        transform_reg <= transform_in;
-                        camera_transform_valid  <= 1;
+                        transform_setup_r.camera_transform <= transform_in;
+                        transform_setup_r.camera_transform_valid <= 1;
                         frame_state <= IDLE;
                         if(max_inst == 0)
                             next_inst_id <= 0;
                     end else if (inst_id_rd != 0) begin
                         if (draw_ready) begin
-                            tri_reg.v0 <= v_collect[0];
-                            tri_reg.v1 <= v_collect[1];
-                            tri_reg.v2 <= v_collect[2];
-                            transform_reg <= transform_in;
-                            draw_valid <= 1'b1;
+                            transform_setup_r.triangle.v0 <= v_collect[0];
+                            transform_setup_r.triangle.v0 <= v_collect[1];
+                            transform_setup_r.triangle.v0 <= v_collect[2]; 
+                            transform_setup_r.model_transform <= transform_in;
+                            transform_setup_r.model_transform_valid <= 1;
                             
                             if (tri_ctr < curr_tri_count - 1) begin
                                 tri_ctr <= tri_ctr + 1;
@@ -193,7 +193,7 @@ module frame_driver #(
         end
     end
 
-    assign tri_out = tri_reg;
-    assign transform_out = transform_reg;
+    assign tri_out = tri_r;
+    assign transform_setup = transform_setup_r;
 
 endmodule

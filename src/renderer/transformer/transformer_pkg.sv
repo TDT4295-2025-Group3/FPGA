@@ -3,6 +3,7 @@
 
 package transformer_pkg;
     import math_pkg::*;
+    import vertex_pkg::*;
  
     // Q16.16 multiply with 64-bit intermediate
     function automatic q16_16_t mul_transform(input q16_16_t a, input q16_16_t b);
@@ -14,6 +15,15 @@ package transformer_pkg;
         t = a_round * b_round;
         return q16_16_t'(t >>> 8);
     endfunction
+
+    function automatic point3d_t add_3d_transform(input point3d_t a, input point3d_t b);
+        point3d_t result;
+        result.x = a.x + b.x;
+        result.y = a.y + b.y;
+        result.z = a.z + b.z;
+        return result;
+    endfunction
+
 
     // Dot product row·vec, row & vec in Q16.16; accumulate wide, single >>>16
     function automatic q16_16_t dot3_transform(
@@ -39,39 +49,39 @@ package transformer_pkg;
     endfunction
 
     typedef struct packed {
-        triangle_t model_tri,
-        transform_t_t model_trans,
-        transform_t_t camera_trans,
-        logic model_trans_valid,
-        logic camera_trans_valid
+        triangle_t triangle;
+        transform_t model_transform;
+        transform_t camera_transform;
+        logic model_transform_valid;
+        logic camera_transform_valid;
     } transform_setup_t;
 
     typedef struct packed {
-        q16_16_t R11,
-        q16_16_t R12,
-        q16_16_t R13,
-        q16_16_t R21,
-        q16_16_t R22,
-        q16_16_t R23,
-        q16_16_t R31,
-        q16_16_t R32,
-        q16_16_t R33
+        q16_16_t R11;
+        q16_16_t R12;
+        q16_16_t R13;
+        q16_16_t R21;
+        q16_16_t R22;
+        q16_16_t R23;
+        q16_16_t R31;
+        q16_16_t R32;
+        q16_16_t R33;
     } matrix_t;
 
     typedef struct packed {
-        point3d_t pos,  // position
-        matrix_t  mtx,  // rotation matix
-        point3d_t scale // scale
-    } mtx_transform_t;
+        point3d_t pos;
+        matrix_t  rot_mtx;  // rotation matix
+        point3d_t scale;
+    } matrix_transform_t;
 
     typedef struct packed {
-        trianlge_t model_tri,
-        mtx_transform_t model,
-        mtx_transform_t camera,
+        triangle_t triangle;
+            matrix_transform_t model;
+        matrix_transform_t camera;
     } model_world_t;
 
     typedef struct packed {
-        trianlge_t world_tri,
-        matrix_t camera_mtx
-    } 
+        triangle_t triangle;
+        matrix_transform_t camera;
+    } world_camera_t;
 endpackage

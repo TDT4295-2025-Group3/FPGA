@@ -14,6 +14,7 @@ module top (
     import math_pkg::*;
     import color_pkg::*;
     import vertex_pkg::*;
+    import transformer_pkg::*;
 
     // ----------------------------------------------------------------
     // Clocks
@@ -139,10 +140,51 @@ module top (
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
     localparam color12_t CLEAR_COLOR = 12'h223;
+    localparam int       FOCAL_LENGTH  = 256;
+
+    transform_t camera_transform;
+    transform_t transform;
+    transform_setup_t transform_setup;
+
+    assign camera_transform.pos         = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
+    assign camera_transform.rot_sin     = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
+    assign camera_transform.rot_cos     = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
+    assign camera_transform.scale       = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
+
+    // assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
+    // assign transform.rot_sin            = '{x:32'h0000_8000, y:32'hFFFF_8000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
+    // assign transform.rot_cos            = '{x:32'h0000_DDB4, y:32'h0000_DDB4, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1) 
+    // assign transform.scale              = '{x:32'h0000_199A, y:32'h0000_199A, z:32'h0000_199A}; // scale = (0.1, 0.1, 0.1)
+assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
+assign transform.rot_sin            = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0, 0, 0)
+assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
+assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
+
+
+    // logic has_setup_camera_transform;
+    // always_ff @(posedge clk_render or negedge btn_rst_n) begin
+    //     if (!btn_rst_n) begin
+    //         has_setup_camera_transform <= 1'b0;
+    //     end else begin
+    //         has_setup_camera_transform <= transform_setup.camera_transform_valid;
+    //     end
+    // end
+
+    logic test;
+    always_ff @(posedge clk_render) begin
+        test <= !test;
+    end
+
+    assign transform_setup.triangle     = feeder_tri;
+    assign transform_setup.model_transform = transform;
+    assign transform_setup.model_transform_valid = !test;
+    assign transform_setup.camera_transform_valid = test;
+    assign transform_setup.camera_transform = camera_transform;
 
     render_manager #(
         .WIDTH (FB_WIDTH),
         .HEIGHT(FB_HEIGHT),
+        .FOCAL_LENGTH       (FOCAL_LENGTH),
         .SUBPIXEL_BITS       (3),
         .DENOM_INV_BITS      (36),
         .DENOM_INV_FBITS     (32),
@@ -153,7 +195,7 @@ module top (
 
         .begin_frame      (frame_start_render),
 
-        .triangle         (feeder_tri),
+        .transform_setup   (transform_setup),
         .triangle_valid   (feeder_valid),
         .triangle_ready   (renderer_ready),
 

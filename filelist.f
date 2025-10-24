@@ -6,6 +6,11 @@ src/renderer/transformer/transformer_pkg.sv
 src/div.sv
 src/inv.sv
 
+src/renderer/transformer/transform_setup.sv
+src/renderer/transformer/model_world_transformer.sv
+src/renderer/transformer/screen_normalizer.sv
+src/renderer/transformer/transformer.sv
+
 src/renderer/rasterizer/triangle_setup.sv
 src/renderer/rasterizer/pixel_traversal.sv
 src/renderer/rasterizer/pixel_eval.sv
