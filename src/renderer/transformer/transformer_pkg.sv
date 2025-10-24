@@ -59,15 +59,19 @@ package transformer_pkg;
     } matrix_t;
 
     typedef struct packed {
+        point3d_t pos,  // position
+        matrix_t  mtx,  // rotation matix
+        point3d_t scale // scale
+    } mtx_transform_t;
+
+    typedef struct packed {
         trianlge_t model_tri,
-        matrix_t model_mtx,
-        matrix_t camera_mtx
+        mtx_transform_t model,
+        mtx_transform_t camera,
     } model_world_t;
 
     typedef struct packed {
         trianlge_t world_tri,
         matrix_t camera_mtx
     } 
-
-
 endpackage
