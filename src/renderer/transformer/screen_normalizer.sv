@@ -23,7 +23,7 @@ module screen_normalizer #(
     output       logic       busy
 );
 
-    localparam int SCALE = 100;
+    localparam int SCALE = 200;
     localparam int HALF_WIDTH = WIDTH  / 2;
     localparam int HALF_HEIGHT = HEIGHT / 2;
     localparam int SCALE_FACTOR_Q16_16 = q16_16_t'((HALF_HEIGHT<<16)/SCALE);

@@ -98,7 +98,7 @@ module top (
     triangle_t feeder_tri;
     logic feeder_valid, feeder_busy;
 
-   q16_16_t offset_x, offset_y;
+    q16_16_t offset_x, offset_y;
     always_ff @(posedge clk_render or negedge btn_rst_n) begin
         if (!btn_rst_n)
             offset_x <= -($signed(FB_WIDTH) <<< 15);
@@ -114,12 +114,35 @@ module top (
         if (!btn_rst_n)
             offset_y <= 11'd0;
         else if (begin_frame) begin
-                if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
-                    offset_y <= 11'd0;
-                else
-                    offset_y <= offset_y + (32'sd1 <<< 13);
-            end
+            if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
+                offset_y <= 11'd0;
+            else
+                offset_y <= offset_y + (32'sd1 <<< 13);
+        end
     end
+
+    // ---------- Camera-first sequencing ----------
+    // 1) Generate a one-cycle camera pulse at frame start
+    logic cam_req;
+    always_ff @(posedge clk_render or negedge btn_rst_n) begin
+        if (!btn_rst_n)
+            cam_req <= 1'b0;
+        else if (frame_start_render && !renderer_busy)
+            cam_req <= 1'b1;   // request camera this frame
+        else if (cam_req)
+            cam_req <= 1'b0;   // one-shot
+    end
+    wire cam_pulse = cam_req;   // 1-cycle camera_transform_valid
+
+    // 2) Start feeder one cycle AFTER the camera pulse
+    logic feeder_begin_frame;
+    always_ff @(posedge clk_render or negedge btn_rst_n) begin
+        if (!btn_rst_n)
+            feeder_begin_frame <= 1'b0;
+        else
+            feeder_begin_frame <= cam_pulse; // delayed kick for feeder
+    end
+    // --------------------------------------------
 
     triangle_feeder #(
         .N_TRIS(430),
@@ -127,7 +150,7 @@ module top (
     ) feeder_inst (
         .clk        (clk_render),
         .rst        (!btn_rst_n),
-        .begin_frame(begin_frame),
+        .begin_frame(feeder_begin_frame), // was begin_frame
         .out_valid  (feeder_valid),
         .out_ready  (renderer_ready),
         .offset_x   (offset_x),
@@ -155,31 +178,21 @@ module top (
     // assign transform.rot_sin            = '{x:32'h0000_8000, y:32'hFFFF_8000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
     // assign transform.rot_cos            = '{x:32'h0000_DDB4, y:32'h0000_DDB4, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1) 
     // assign transform.scale              = '{x:32'h0000_199A, y:32'h0000_199A, z:32'h0000_199A}; // scale = (0.1, 0.1, 0.1)
-assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
-assign transform.rot_sin            = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0, 0, 0)
-assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
-assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
+    // assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
+    // assign transform.rot_sin            = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0, 0, 0)
+    // assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
+    // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
+    assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
+    assign transform.rot_sin            = '{x:32'h0000_8000, y:32'hFFFF_8000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
+    assign transform.rot_cos            = '{x:32'h0000_DDB4, y:32'h0000_DDB4, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1)
+    assign transform.scale              = '{x:32'h0000_6666, y:32'h0000_6666, z:32'h0000_6666}; // scale = (0.4, 0.4, 0.4)
 
-
-    // logic has_setup_camera_transform;
-    // always_ff @(posedge clk_render or negedge btn_rst_n) begin
-    //     if (!btn_rst_n) begin
-    //         has_setup_camera_transform <= 1'b0;
-    //     end else begin
-    //         has_setup_camera_transform <= transform_setup.camera_transform_valid;
-    //     end
-    // end
-
-    logic test;
-    always_ff @(posedge clk_render) begin
-        test <= !test;
-    end
-
-    assign transform_setup.triangle     = feeder_tri;
-    assign transform_setup.model_transform = transform;
-    assign transform_setup.model_transform_valid = !test;
-    assign transform_setup.camera_transform_valid = test;
-    assign transform_setup.camera_transform = camera_transform;
+    // Fill transform_setup bus: camera first (one cycle), then triangles with model transform
+    assign transform_setup.triangle                 = feeder_tri;
+    assign transform_setup.model_transform          = transform;
+    assign transform_setup.model_transform_valid    = feeder_valid;  // valid with each triangle
+    assign transform_setup.camera_transform_valid   = cam_pulse;     // 1 cycle at frame start
+    assign transform_setup.camera_transform         = camera_transform;
 
     render_manager #(
         .WIDTH (FB_WIDTH),
@@ -195,7 +208,7 @@ assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h
 
         .begin_frame      (frame_start_render),
 
-        .transform_setup   (transform_setup),
+        .transform_setup  (transform_setup),
         .triangle_valid   (feeder_valid),
         .triangle_ready   (renderer_ready),
 

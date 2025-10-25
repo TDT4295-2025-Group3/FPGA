@@ -6,14 +6,17 @@ package transformer_pkg;
     import vertex_pkg::*;
  
     // Q16.16 multiply with 64-bit intermediate
-    function automatic q16_16_t mul_transform(input q16_16_t a, input q16_16_t b);
-        logic signed [27:0] a_round, b_round; // Q16.12
-        logic signed [55:0] t;               // Q32.24
+    // function automatic q16_16_t mul_transform(input q16_16_t a, input q16_16_t b);
+    //     logic signed [27:0] a_round, b_round; // Q16.12
+    //     logic signed [55:0] t;               // Q32.24
 
-        a_round = a[31:4];
-        b_round = b[31:4];
-        t = a_round * b_round;
-        return q16_16_t'(t >>> 8);
+    //     a_round = a[31:4];
+    //     b_round = b[31:4];
+    //     t = a_round * b_round;
+    //     return q16_16_t'(t >>> 8);
+    // endfunction
+       function automatic q16_16_t mul_transform(input q16_16_t a, input q16_16_t b);
+        return q16_16_t'((q32_32_t'(a) * q32_32_t'(b)) >>> 16);
     endfunction
 
     function automatic point3d_t add_3d_transform(input point3d_t a, input point3d_t b);
@@ -26,26 +29,41 @@ package transformer_pkg;
 
 
     // Dot product row·vec, row & vec in Q16.16; accumulate wide, single >>>16
-    function automatic q16_16_t dot3_transform(
+    // function automatic q16_16_t dot3_transform(
+    //     input q16_16_t ax, input q16_16_t ay, input q16_16_t az,
+    //     input q16_16_t bx, input q16_16_t by, input q16_16_t bz
+    // );
+    //     logic signed [27:0] ax_round, ay_round, az_round; // Q16.12
+    //     logic signed [27:0] bx_round, by_round, bz_round; // Q16.12
+
+    //     logic signed [55:0] p0, p1, p2; // Q32.24
+    //     logic signed [55:0] sum;        // Q32.24
+        
+    //     ax_round = ax[31:4]; ay_round = ay[31:4]; az_round = az[31:4];
+    //     bx_round = bx[31:4]; by_round = by[31:4]; bz_round = bz[31:4];
+        
+    //     p0  = ax_round * bx_round; // Q32.24
+    //     p1  = ay_round * by_round; // Q32.24
+    //     p2  = az_round * bz_round; // Q32.24
+
+    //     sum = p0 + p1 + p2; // Q32.24   
+
+    //     return q16_16_t'(sum >>> 8);
+    // endfunction
+     function automatic q16_16_t dot3_transform(
         input q16_16_t ax, input q16_16_t ay, input q16_16_t az,
         input q16_16_t bx, input q16_16_t by, input q16_16_t bz
     );
-        logic signed [27:0] ax_round, ay_round, az_round; // Q16.12
-        logic signed [27:0] bx_round, by_round, bz_round; // Q16.12
-
-        logic signed [55:0] p0, p1, p2; // Q32.24
-        logic signed [55:0] sum;        // Q32.24
+        q32_32_t p0, p1, p2; // Q32.32
+        q32_32_t sum;        // Q32.32
         
-        ax_round = ax[31:4]; ay_round = ay[31:4]; az_round = az[31:4];
-        bx_round = bx[31:4]; by_round = by[31:4]; bz_round = bz[31:4];
-        
-        p0  = ax_round * bx_round; // Q32.24
-        p1  = ay_round * by_round; // Q32.24
-        p2  = az_round * bz_round; // Q32.24
+        p0  = q32_32_t'(ax) * q32_32_t'(bx); // Q32.32
+        p1  = q32_32_t'(ay) * q32_32_t'(by); // Q32.32
+        p2  = q32_32_t'(az) * q32_32_t'(bz); // Q32.32
 
-        sum = p0 + p1 + p2; // Q32.24   
+        sum = p0 + p1 + p2; // Q32.32   
 
-        return q16_16_t'(sum >>> 8);
+        return q16_16_t'(sum >>> 16);
     endfunction
 
     typedef struct packed {
