@@ -6,14 +6,26 @@ package transformer_pkg;
     import vertex_pkg::*;
  
     // Q16.16 multiply with 64-bit intermediate
+    // if the result does fit a q16.16 value, higher integer bit would be cut silently
     function automatic q16_16_t mul_transform(input q16_16_t a, input q16_16_t b);
         logic signed [27:0] a_round, b_round; // Q16.12
-        logic signed [55:0] t;               // Q32.24
+        logic signed [55:0] t;                // Q32.24
 
         a_round = a[31:4];
         b_round = b[31:4];
         t = a_round * b_round;
         return q16_16_t'(t >>> 8);
+    endfunction
+
+    // Q1.16 + sign multiply with 36-bit intermediate
+    function automatic q16_16_t mul_matrix_coefficient(input q16_16_t a, input q16_16_t b);
+        logic signed [17:0] a_round, b_round; // Q1.16 + sign
+        logic signed [35:0] t;                // Q2.32 + 2*sign
+
+        a_round = a[17:0];
+        b_round = b[17:0];
+        t = a_round * b_round;
+        return q16_16_t'(t >>> 16);
     endfunction
 
     function automatic point3d_t add_3d_transform(input point3d_t a, input point3d_t b);

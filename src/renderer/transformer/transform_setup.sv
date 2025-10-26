@@ -26,8 +26,6 @@ module transform_setup (
     
     // Latched transaction
     transform_setup_t transform_setup_r;
-    logic model_valid_r;
-    logic camera_valid_r;
 
     // Rotation parameters
     q16_16_t cx, sx, cy, sy, cz, sz;
@@ -39,11 +37,11 @@ module transform_setup (
 
     // Choose sin/cos from right transform
     always_comb begin
-        if (camera_valid_r) begin
+        if (transform_setup_r.camera_transform_valid) begin
             sx = transform_setup_r.camera_transform.rot_sin.x; cy = transform_setup_r.camera_transform.rot_cos.y;
             cx = transform_setup_r.camera_transform.rot_cos.x; sz = transform_setup_r.camera_transform.rot_sin.z;
             sy = transform_setup_r.camera_transform.rot_sin.y; cz = transform_setup_r.camera_transform.rot_cos.z;
-        end else if (model_valid_r) begin
+        end else if (transform_setup_r.model_transform_valid) begin
             sx = transform_setup_r.model_transform.rot_sin.x;  cy = transform_setup_r.model_transform.rot_cos.y;
             cx = transform_setup_r.model_transform.rot_cos.x;  sz = transform_setup_r.model_transform.rot_sin.z;
             sy = transform_setup_r.model_transform.rot_sin.y;  cz = transform_setup_r.model_transform.rot_cos.z;
@@ -56,15 +54,15 @@ module transform_setup (
 
     // Compute rotation matrix
     always_comb begin
-        R11 = mul_transform(cz, cy);
-        R12 = mul_transform(mul_transform(cz, sy), sx) - mul_transform(sz, cx);
-        R13 = mul_transform(mul_transform(cz, sy), cx) + mul_transform(sz, sx);
-        R21 = mul_transform(sz, cy);
-        R22 = mul_transform(mul_transform(sz, sy), sx) + mul_transform(cz, cx);
-        R23 = mul_transform(mul_transform(sz, sy), cx) - mul_transform(cz, sx);
+        R11 = mul_matrix_coefficient(cz, cy);
+        R12 = mul_matrix_coefficient(mul_transform(cz, sy), sx) - mul_transform(sz, cx);
+        R13 = mul_matrix_coefficient(mul_matrix_coefficient(cz, sy), cx) + mul_matrix_coefficient(sz, sx);
+        R21 = mul_matrix_coefficient(sz, cy);
+        R22 = mul_matrix_coefficient(mul_matrix_coefficient(sz, sy), sx) + mul_matrix_coefficient(cz, cx);
+        R23 = mul_matrix_coefficient(mul_matrix_coefficient(sz, sy), cx) - mul_matrix_coefficient(cz, sx);
         R31 = -sy;
-        R32 = mul_transform(cy, sx);
-        R33 = mul_transform(cy, cx);
+        R32 = mul_matrix_coefficient(cy, sx);
+        R33 = mul_matrix_coefficient(cy, cx);
     end
 
     assign in_ready = (state == IDLE);
@@ -74,8 +72,6 @@ module transform_setup (
         if (rst) begin
             state <= IDLE;
             transform_setup_r <= '0;
-            model_valid_r <= 1'b0;
-            camera_valid_r <= 1'b0;
             out_valid <= 1'b0;
             out_model_world <= '0;
         end else begin
@@ -83,10 +79,8 @@ module transform_setup (
                 IDLE: begin
                     out_valid <= 1'b0;
                     if (in_valid && in_ready) begin
-                        // latch transaction and flags
+                        // latch transaction
                         transform_setup_r <= transform_setup;
-                        model_valid_r <= transform_setup.model_transform_valid;
-                        camera_valid_r <= transform_setup.camera_transform_valid;
                         state <= WAIT;
                     end
                 end
@@ -99,7 +93,7 @@ module transform_setup (
                 OUTPUT: begin
 
                     // drive either model or camera fields depending on flags
-                    if (model_valid_r) begin
+                    if (transform_setup_r.model_transform_valid) begin
                         out_model_world.triangle    <= transform_setup_r.triangle;
                         out_model_world.model.pos   <= transform_setup_r.model_transform.pos;
                         out_model_world.model.scale <= transform_setup_r.model_transform.scale;
@@ -121,10 +115,10 @@ module transform_setup (
                             state <= IDLE;
                             out_valid <= 1'b0;
                             transform_setup_r <= '0;
-                            model_valid_r <= 1'b0;
+                            transform_setup_r.model_transform_valid <= 1'b0;
                         end
 
-                    end else if (camera_valid_r) begin
+                    end else if (transform_setup_r.camera_transform_valid) begin
                         out_model_world.camera.pos   <= transform_setup_r.camera_transform.pos;
                         out_model_world.camera.scale <= transform_setup_r.camera_transform.scale;
                         out_model_world.camera.rot_mtx.R11 <= R11;
@@ -137,7 +131,7 @@ module transform_setup (
                         out_model_world.camera.rot_mtx.R32 <= R32;
                         out_model_world.camera.rot_mtx.R33 <= R33;
                         state <= IDLE;
-                        camera_valid_r <= 1'b0;
+                        transform_setup_r.camera_transform_valid <= 1'b0;
                     end
                 end
 
