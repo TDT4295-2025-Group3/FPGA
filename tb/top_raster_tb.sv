@@ -3,10 +3,8 @@
 import opcode_defs::*;
 import buffer_id_pkg::*;
 import vertex_pkg::*;
-import transform_pkg::*;
 
 module tb_top_raster_system;
-
     // Parameters
     localparam MAX_VERT  = 256;
     localparam MAX_TRI   = 256;
@@ -23,9 +21,9 @@ module tb_top_raster_system;
     localparam TRANS_W   = DATA_W * 12;
 
     // Clock / reset
-    logic clk;
+    logic clk_100m;
     logic sck;
-    logic rst;
+    logic rst_n;
 
     // SPI signals
     logic CS_n;
@@ -33,9 +31,12 @@ module tb_top_raster_system;
     logic [3:0] spi_drive;
     logic       spi_de;
     assign spi_io = spi_de ? spi_drive : 4'bz;
-
-    logic initial_load_done;
-    triangle_t project_triangle;
+    
+    // test ports
+    logic [7:0] vert_id;
+    logic [3:0] spi_status_test;
+    logic [3:0] error_status_test;
+    logic output_bit;
 
     // Instantiate DUT
     top_raster_system #(
@@ -53,19 +54,21 @@ module tb_top_raster_system;
         .DATA_W(DATA_W),
         .TRANS_W(TRANS_W)
     ) dut (
-        .clk(clk),
+        .clk_100m(clk_100m),
         .sck(sck),
-        .rst(rst),
+        .rst_n(rst_n),
         .CS_n(CS_n),
         .spi_io(spi_io),
         
-        .initial_load_done(initial_load_done),
-        .project_triangle(project_triangle)
+        .vert_id(vert_id),
+        .spi_status_test(spi_status_test),
+        .error_status_test(error_status_test),
+        .output_bit(output_bit)
     );
 
     // Clock generation
-    initial clk = 0;
-    always #5 clk = ~clk;  // 100 MHz
+    initial clk_100m = 0;
+    always #5 clk_100m = ~clk_100m;  // 100 MHz
 
     initial sck = 0;
     always #50 sck = ~sck; // 10 MHz SPI clock
@@ -73,14 +76,13 @@ module tb_top_raster_system;
     
     // === Reset ===
     initial begin
-        initial_load_done = '0;
-        rst    = 1;
+        rst_n  = 0;
         CS_n   = 1;
         spi_de = 0;
         spi_drive = 0;
-        #100;
-        rst = 0;
-        #20;
+        #20; 
+        rst_n = 1;
+        #6200; // wait for clock lock
         run_sequence();
         #2000;
         $finish;
@@ -109,13 +111,18 @@ module tb_top_raster_system;
         repeat (4) @(posedge sck);
         CS_n = 1;
     endtask
+    
+    task spi_return_status();
+        repeat (2) @(posedge sck);
+        CS_n = 1;
+    endtask
 
     // === Example SPI sequence ===
     task run_sequence();
         begin
             // CREATE_VERT test
             spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count = 3 
+            // Send vertex count
             spi_send_nybble(4'h0);
             spi_send_nybble(4'h3);
 
@@ -125,38 +132,69 @@ module tb_top_raster_system;
             repeat (8) spi_send_nybble(0);
             repeat (8) spi_send_nybble(0);
             repeat (3) spi_send_nybble(4'hA);
-            // vert 0 pos (0,2,0)
+            // vert 1 pos (0,2,0)
             repeat (8) spi_send_nybble(0);
             repeat (3) spi_send_nybble(0);
             repeat (1) spi_send_nybble(2);
             repeat (4) spi_send_nybble(0);
             repeat (8) spi_send_nybble(0);
             repeat (3) spi_send_nybble(4'hB);
-            // vert 0 pos (0,0,2)
+            // vert 2 pos (0,0,2)
             repeat (8) spi_send_nybble(0);
             repeat (8) spi_send_nybble(0);
             repeat (3) spi_send_nybble(0);
             repeat (1) spi_send_nybble(2);
             repeat (4) spi_send_nybble(0);
             repeat (3) spi_send_nybble(4'hC);
+//            // vert 3 pos (a,0,0)
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hA);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'hD);
+//            // vert 4 pos (1,1,1)
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'h1);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'h1);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'h1);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'hE);
             
             spi_return_result();
 
             // CREATE_TRI test
-            // count = 1
+            // send tri count
             spi_send_opcode(OP_CREATE_TRI);
             spi_send_nybble(4'h0);
             spi_send_nybble(4'h1);  
             
             // send triangle data
+            // Tri 0
             spi_send_nybble(4'h0);
+            spi_send_nybble(4'h0); // vert 0
             spi_send_nybble(4'h0);
-            
+            spi_send_nybble(4'h1); // vert 1
             spi_send_nybble(4'h0);
-            spi_send_nybble(4'h1);
-            
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h2);
+            spi_send_nybble(4'h2); // vert 2
+//            // Tri 1
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3); // vert 3
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h1); // vert 1
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h2); // vert 2
+//            // Tri 2
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0); // vert 0
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h2); // vert 2
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h4); // vert 4
             
             // finish Sending tri data
             spi_return_result();            
@@ -186,7 +224,8 @@ module tb_top_raster_system;
             repeat (4) spi_send_nybble(4'h0); 
             // scale = 24
             repeat (24) spi_send_nybble(4'h0);
-            spi_return_result();   
+            // update inst doesn't really need this long of a wait
+            spi_return_status();   
             
             // CREATE_INST test
             spi_send_opcode(OP_CREATE_INST);
@@ -196,21 +235,19 @@ module tb_top_raster_system;
             // no rotation transform
             // Pos 32*3/4 = 24
             repeat (24) spi_send_nybble(4'h0); 
-            // sin (0,1,0)
+            // sin (0,0,0)
             repeat (8) spi_send_nybble(4'h0); 
-            repeat (3) spi_send_nybble(4'h0); 
-            repeat (1) spi_send_nybble(4'h1); 
-            repeat (3) spi_send_nybble(4'h0); 
             repeat (8) spi_send_nybble(4'h0); 
-            // cos(1,0,1)
+            repeat (8) spi_send_nybble(4'h0); 
+            // cos(1,1,1)
             // cos_x 
             repeat (3) spi_send_nybble(4'h0); 
             repeat (1) spi_send_nybble(4'h1);
             repeat (4) spi_send_nybble(4'h0); 
             // cos_y
             repeat (3) spi_send_nybble(4'h0); 
-            repeat (1) spi_send_nybble(4'h1);
-            repeat (4) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1); 
+            repeat (4) spi_send_nybble(4'h0);  
             // cos_z
             repeat (3) spi_send_nybble(4'h0); 
             repeat (1) spi_send_nybble(4'h1);
@@ -220,20 +257,15 @@ module tb_top_raster_system;
             repeat (1) spi_send_nybble(4'h1);
             repeat (4) spi_send_nybble(4'h0); 
             repeat (3) spi_send_nybble(4'h0); 
-            repeat (1) spi_send_nybble(4'h1);
+            repeat (1) spi_send_nybble(4'h2);
             repeat (4) spi_send_nybble(4'h0); 
             repeat (3) spi_send_nybble(4'h0); 
-            repeat (1) spi_send_nybble(4'h1);
+            repeat (1) spi_send_nybble(4'h3);
             repeat (4) spi_send_nybble(4'h0); 
-            
             spi_return_result();
-            
-            initial_load_done = 1'b1;
-            repeat (20) @(posedge sck);
-            initial_load_done = 1'b0;
-            
+
             // wait 60 cycles to monitor further pipeline
-            repeat (60) @(posedge clk);
+            repeat (60) @(posedge sck);
         end
     endtask
 

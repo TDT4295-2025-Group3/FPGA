@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-import transform_pkg::*;
+import transformer_pkg::*;
 import buffer_id_pkg::*;
 import vertex_pkg::*;
 `default_nettype wire
@@ -35,13 +35,15 @@ module frame_driver #(
     input  logic [TIDX_W-1:0]            curr_tri_count,
 
     // Frame driver ↔ Transform
-    input  logic in_ready,  // transform setup ready
+    input  logic out_ready, // transform setup ready
     output logic out_valid, // used for when the whole setup is valid 
     output transform_setup_t transform_setup,
 
     // Frame driver ↔ rasterdizer (when done)!!
-    input  logic world_busy,  // don't start new frame while busy
+    input  logic draw_start,
     output logic draw_done,   // All instances done
+    
+    output logic busy
     
 );
 
@@ -54,7 +56,7 @@ module frame_driver #(
     vertex_t v_collect[0:2];
     triangle_t tri_r;
     transform_setup_t transform_setup_r;
-
+    
     // FSM
     enum logic [3:0] {
         IDLE,
@@ -70,40 +72,39 @@ module frame_driver #(
         DONE
     } frame_state;
     
+    assign busy = (frame_state != DONE);
     // 8 cycles per triangle
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             frame_state   <= IDLE;
             tri_ctr       <= '0;
             idx_tri_reg   <= '0;
-            tri_reg       <= '0;
             v_collect[0]  <= '0;
             v_collect[1]  <= '0;
             v_collect[2]  <= '0;
-            transform_reg <= '0;
-            camera_transform_valid  <= '0;
-            draw_valid    <= 1'b0;
+            out_valid     <= '0;
             tri_addr      <= '0;
             vert_addr     <= '0;
             next_inst_id  <= '0;
             inst_id_rd    <= '0;
             draw_done     <= '0;
+            transform_setup_r <= '0;
         end else begin
             // Default outputs per cycle
-            draw_valid <= '0;
+            out_valid <= '0;
             vert_addr  <= '0;
             tri_addr   <= '0;
-            camera_transform_valid <= '0;
+            transform_setup_r.model_transform_valid  <= '0;
+            transform_setup_r.camera_transform_valid  <= '0;
 
             // NP: need to wait +2 cycles: +1 load_addr +1 ram_out, to acces ram data
             case (frame_state)
                 IDLE: begin
-                    if (draw_ready) begin
+                    if (out_ready) begin
                         next_inst_id <= next_inst_id +1;
                         inst_id_rd   <= next_inst_id;
                         frame_state <= LOAD_BASE;
                     end
-                    draw_done <= 0;
                 end
                 
                 // curr_tri_base <= tri_table[inst_table[inst_id].base];
@@ -153,39 +154,40 @@ module frame_driver #(
                 end
 
                 OUTPUT_TRI: begin
-                    if (inst_id_rd == 0 && !world_busy) begin 
+                    if (inst_id_rd == 0 && out_ready) begin 
                         transform_setup_r.camera_transform <= transform_in;
                         transform_setup_r.camera_transform_valid <= 1;
+                        out_valid <= 1;
                         frame_state <= IDLE;
                         if(max_inst == 0)
                             next_inst_id <= 0;
-                    end else if (inst_id_rd != 0) begin
-                        if (draw_ready) begin
-                            transform_setup_r.triangle.v0 <= v_collect[0];
-                            transform_setup_r.triangle.v0 <= v_collect[1];
-                            transform_setup_r.triangle.v0 <= v_collect[2]; 
-                            transform_setup_r.model_transform <= transform_in;
-                            transform_setup_r.model_transform_valid <= 1;
-                            
-                            if (tri_ctr < curr_tri_count - 1) begin
-                                tri_ctr <= tri_ctr + 1;
-                                frame_state <= REQUEST_TRI;
-                            end else begin
-                                tri_ctr <= 0;
-                                frame_state <= IDLE;
-                                // If all instances are done stop output
-                                if(inst_id_rd == max_inst) begin
-                                    draw_done <= 1;
-                                    next_inst_id <= 0;
-                                    frame_state <= DONE;
-                                end
+                    end else if (inst_id_rd != 0 && out_ready) begin
+                        transform_setup_r.triangle.v0 <= v_collect[0];
+                        transform_setup_r.triangle.v1 <= v_collect[1];
+                        transform_setup_r.triangle.v2 <= v_collect[2]; 
+                        transform_setup_r.model_transform <= transform_in;
+                        transform_setup_r.model_transform_valid <= 1;
+                        out_valid <= 1;
+                        
+                        if (tri_ctr < curr_tri_count - 1) begin
+                            tri_ctr <= tri_ctr + 1;
+                            frame_state <= REQUEST_TRI;
+                        end else begin
+                            tri_ctr <= 0;
+                            frame_state <= IDLE;
+                            // If all instances are done stop output
+                            if(inst_id_rd == max_inst) begin
+                                draw_done <= 1;
+                                next_inst_id <= 0;
+                                frame_state <= DONE;
                             end
                         end
                     end
                 end
                 
-                DONE: if(draw_ready) begin
+                DONE: if(draw_start) begin
                         frame_state <= IDLE;
+                        draw_done <= 0;
                 end
 
                 default: frame_state <= IDLE;

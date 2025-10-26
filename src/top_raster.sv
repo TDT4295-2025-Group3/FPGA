@@ -2,12 +2,13 @@
 `default_nettype wire
 import opcode_defs::*;
 import buffer_id_pkg::*;
+import math_pkg::*;
 import vertex_pkg::*;
 import transformer_pkg::*;
 
 module top_raster_system #(
-    parameter MAX_VERT  = 8192, // 2^13 = 8192, 16384
-    parameter MAX_TRI   = 8192,
+    parameter MAX_VERT  = 256, // 2^13 = 8192, 16384
+    parameter MAX_TRI   = 256,
     parameter MAX_INST  = 256,
     parameter MAX_VERT_BUF = 256,
     parameter MAX_TRI_BUF  = 256,
@@ -21,18 +22,50 @@ module top_raster_system #(
     parameter TRANS_W   = DATA_W * 12
 )(
     // === External signals ===
-    input  logic clk,       // raster clock
+    input  logic clk_100m,       // raster clock
     input  logic sck,       // SPI clock
-    input  logic rst,       // reset
+    input  logic rst_n,       // reset
     input  logic CS_n,      // chip select
     inout  logic [3:0] spi_io,   // SPI inputs
     
-    output triangle_t camera_triangle,
-    input  logic initial_load_done
+    output logic [7:0] vert_id, // JB pmod
+    output logic [3:0] spi_status_test, // JC pmod 1-4
+    output logic [3:0] error_status_test, // JC pmod 7-10
+    output logic output_bit
 );
+
+    // ----------------------------------------------------------------
+    // Clocks
+    // ----------------------------------------------------------------
+    logic clk_pix;
+    logic clk_render;
+    logic clk_locked;
+
+    gfx_clocks clocks_inst (
+        .clk_100m   (clk_100m),
+        .rst        (!rst_n),
+        .clk_pix    (clk_pix),
+        .clk_render (clk_render),
+        .clk_locked (clk_locked)
+    );
+    
+    logic rst;
+    logic clk_locked_sync, rst_n_sync;
+    
+    // 2-stage synchronization
+    // protect for metastability
+    always_ff @(posedge clk_render) begin
+        clk_locked_sync <= clk_locked;
+    end
+    
+    // synchronous reset
+    always_ff @(posedge clk_render) 
+        rst <= (!clk_locked_sync);
+        
     // =============================
     // Internal signals
     // =============================
+    q16_16_t focal_length = -5;
 
     // SPI ↔ Raster memory
     logic        opcode_valid;
@@ -56,7 +89,9 @@ module top_raster_system #(
     logic [TRANS_W-1:0] transform_out_spi;
     logic [7:0] inst_id_out;
     logic [3:0] status;
-
+    
+    // spi frame ↔ driver
+    logic [7:0] max_inst;
     
     // Raster memory ↔ frame driver
     logic [$clog2(MAX_INST)-1:0] inst_id_rd;
@@ -71,26 +106,41 @@ module top_raster_system #(
     vertex_t vert_data_out;
     transform_t transform_out_mem;
 
-    // Frame driver ↔ model/world transform
-    transform_t transform_out;
-    triangle_t  world_tri_out;  
-    logic frame_driver_valid;
-    logic world_ready;
+    // Frame driver ↔ transform_setup
+    logic transform_setup_ready;
+    logic transform_setup_valid;
+    transform_setup_t transform_setup;
     
-    // model/world ↔ world/camera
-    triangle_t  world_triangle;
-    logic camera_transform_valid;
-    logic world_valid;
-    logic world_busy;
+    // Frame driver ↔ razter/system
+    logic feed_done;
+    logic draw_start;
+    logic frame_driver_busy;
     
-    // frame driver ↔ triangle project
-    transform_t camera_transform;
     
-    // world/camera ↔ triangle project
+    // Transform_setup ↔ model_world
+    model_world_t out_model_world;
+    logic model_world_valid;
+    logic model_world_ready; 
+    logic transform_setup_busy;
+    
+    
+//    // model/world ↔ world/camera
+//    triangle_t  world_triangle;
+//    logic world_valid;
+//    logic camera_ready;
+//    logic world_busy;
+    
+//    // world/camera ↔ triangle project
 //    triangle_t camera_triangle;
-    logic camera_valid;
-    logic camera_transform_ready;
-    logic camera_busy;
+//    logic camera_valid;
+//    logic project_ready;
+//    logic camera_busy;
+    
+//    // triangle project ↔ rasterdizer stuff
+//    triangle_t project_triangle;
+//    logic project_valid;
+//    logic resterdizer_ready = 1;
+//    logic project_busy;
 
     // =============================
     // SPI front-end
@@ -136,7 +186,12 @@ module top_raster_system #(
         .vert_id_out(vert_id_out),
         .tri_id_out(tri_id_out),
         .transform_out(transform_out_spi),
-        .inst_id_out(inst_id_out)
+        .inst_id_out(inst_id_out),
+        
+        .max_inst(max_inst),
+        
+        .spi_status_test(spi_status_test),
+        .error_status_test(error_status_test)
     );
 
     // =============================
@@ -158,7 +213,7 @@ module top_raster_system #(
         .DATA_W(DATA_W),
         .TRANS_W(TRANS_W)
     ) u_raster_mem (
-        .clk(clk),
+        .clk(clk_render),
         .rst(rst),
         .sck(sck),
 
@@ -211,69 +266,110 @@ module top_raster_system #(
         .TIDX_W(TIDX_W),
         .TRI_W(TRI_W)
     ) u_frame_driver (
-        .clk(clk),
+        .clk(clk_render),
         .rst(rst),
-        .initial_load_done(initial_load_done),
+        .max_inst(max_inst),
 
         // Frame driver → memory
         .vert_addr(vert_addr_rd),
         .tri_addr(tri_addr_rd),
-        .rd_inst_id(inst_id_rd),
+        .inst_id_rd(inst_id_rd),
 
         // Memory → frame driver
         .vert_in(vert_data_out),
         .idx_tri(idx_tri_out),
+        .transform_in(transform_out_mem),
 
         .curr_vert_base(curr_vert_base_out),
         .curr_tri_base(curr_tri_base_out),
         .curr_tri_count(curr_tri_count_out),
 
         // Frame driver → model world transform
-        .draw_ready(world_ready),
-        .draw_done(frame_driver_valid),
-        .draw_valid(draw_valid),
-        .tri_out(world_tri_out),
-        .transform_in(transform_out_mem),
-        .transform_out(transform_out),
+        .out_ready(transform_setup_ready),
+        .out_valid(transform_setup_valid),
+        .transform_setup(transform_setup),
         
-        // Frame driver → world camera transform
-        .camera_out(camera_transform)
+        // Frame driver ↔ razter/system
+        .draw_done(feed_done),
+        .busy(frame_driver_busy),
+        .draw_start(1'b1) //draw_start
+    );
+    
+    transform_setup 
+        u_transform_setup(
+        .clk(clk_render),
+        .rst(rst),
+        
+        .transform_setup(transform_setup),
+        .in_valid(transform_setup_valid),
+        .in_ready(transform_setup_ready),
+        
+        .out_model_world(out_model_world),
+        .out_valid(model_world_valid),
+        .out_ready(1'b1), //model_world_ready
+        
+        .busy(transform_setup_busy)
     );
     
     
-    model_world_transformer
-        u_model_world_transformer (
-        .clk(clk),
-        .rst(rst),
+//    model_world_transformer
+//        u_model_world_transformer (
+//        .clk(clk_render),
+//        .rst(rst),
+//        .camera_transform_valid(camera_transform_valid),
         
-        // communication with frame driver
-        .transform(transform_out),
-        .triangle(world_tri_out),
-        .in_valid(frame_driver_valid),
-        .in_ready(world_ready),
+//        // communication with frame driver
+//        .transform(transform_out),
+//        .triangle(world_tri_out),
+//        .in_valid(frame_driver_valid),
+//        .in_ready(world_ready),
         
-        // communication with world to camera
-        .out_triangle(world_triangle),
-        .out_valid(world_valid),
-        .out_ready(camera_transform_ready),
-        .busy(world_busy)
-);
+//        // communication with world to camera
+//        .out_triangle(world_triangle),
+//        .out_valid(world_valid),
+//        .out_ready(camera_ready),
+//        .busy(world_busy)
+//    );
 
-    world_camera_transformer 
-        u_world_camera_transformer (
-        .clk(clk),
-        .rst(rst),
+//    world_camera_transformer 
+//        u_world_camera_transformer (
+//        .clk_render(clk_render),
+//        .rst(rst),
         
-        .transform(camera_transform),
-        .triangle(world_triangle),
-        .in_valid(world_valid),
-        .in_ready(camera_transform_ready),
+//        .triangle(world_triangle),
+//        .in_valid(world_valid),
+//        .in_ready(camera_ready),
         
-        .out_triangle(camera_triangle),
-        .out_valid(camera_valid),
-        .out_ready(1'b1),
-        .busy(camera_busy)
-    ); 
-
+//        .out_triangle(camera_triangle),
+//        .out_valid(camera_valid),
+//        .out_ready(project_ready),
+//        .busy(camera_busy)
+//    );  
+        
+//    triangle_projector 
+//        u_trangle_projector (
+//        .clk_render(clk_render),
+//        .rst(rst),
+        
+//        .triangle(camera_triangle),
+//        .in_valid(camera_valid),
+//        .in_ready(project_ready),
+        
+//        .focal_length(focal_length),
+        
+//        .out_triangle(project_triangle),
+//        .out_valid(project_valid),
+//        .out_ready(1'b1),
+//        .busy(project_busy)
+//    );
+    
+    assign tri_id  = tri_id_out[7:0];
+    assign vert_id = vert_id_out[7:0];
+    always @(posedge clk_render) begin
+        if(|out_model_world)
+            output_bit <= 1;
+        else
+            output_bit <= 0;
+    end
 endmodule
 
