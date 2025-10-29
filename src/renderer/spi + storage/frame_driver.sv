@@ -18,6 +18,7 @@ module frame_driver #(
     
     // spi driver ↔ frame driver
     input  logic [7:0] max_inst,
+    input  logic       create_done,
 
     // Memory control
     output logic [$clog2(MAX_VERT)-1:0] vert_addr,
@@ -89,7 +90,7 @@ module frame_driver #(
             inst_id_rd    <= '0;
             draw_done     <= '0;
             transform_setup_r <= '0;
-        end else begin
+        end else if(create_done) begin
             // Default outputs per cycle
             out_valid <= '0;
             vert_addr  <= '0;

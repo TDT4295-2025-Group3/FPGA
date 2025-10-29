@@ -10,10 +10,9 @@ module spi_driver #(
     parameter MAX_INST  = 256,      // maximum instences
     parameter MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
     parameter MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
-    
-    parameter MAX_VERT_CNT = 256,             // max vertices per buffer
-    parameter MAX_TRI_CNT = 256,              // max triangles per buffer
-    parameter VTX_W     = 108,                // 3*32 + 3*4 bits (spec)
+    parameter MAX_VERT_CNT = 4096,  // max vertices per buffer
+    parameter MAX_TRI_CNT  = 4096,  // max triangles per buffer
+    parameter VTX_W     = 108,      // 3*32 + 3*4 bits (spec)
     parameter VIDX_W    = $clog2(MAX_VERT_CNT), 
     parameter TIDX_W    = $clog2(MAX_TRI_CNT),   
     parameter TRI_W     = 3*VIDX_W,           // 3*8 bits. Might want to increase for safety 3*12 bits
@@ -51,7 +50,12 @@ module spi_driver #(
     output logic [7:0] inst_id_out,
     
     // spi driver ↔ frame driver
-    output logic [7:0] max_inst
+    output logic [7:0] max_inst,
+    output logic create_done,
+    
+    // Testing
+    output logic [3:0] spi_status_test, // JC pmod 1-4
+    output logic [3:0] error_status_test // JC pmod 7-10
     );
     
     // spi tri-state logic
@@ -77,6 +81,7 @@ module spi_driver #(
     logic [VTX_W-1:0] vert_r;
     logic spi_out_done;
     logic CS_ready;
+    logic [1:0] out_ctr;
     
     // spi states
     enum logic [3:0] {
@@ -86,7 +91,7 @@ module spi_driver #(
     LOAD_INST_DATA, CREATE_INST, CREATE_INST_RESULT,
     LOAD_UPDATE_INST, UPDATE_INST} spi_state;
     
-    always_ff @(posedge sck) begin
+    always_ff @(posedge sck or posedge rst) begin
         opcode_valid <= 0;
         if(rst) begin
             vert_ctr      <= 0;
@@ -99,6 +104,21 @@ module spi_driver #(
             next_tri_base  <= 0;
             vert_base     <= 0;
             tri_base      <= 0;
+            vert_valid    <= 0;
+            tri_valid     <= 0;
+            vert_hdr_valid <= 0;
+            tri_hdr_valid  <= 0;
+            inst_valid     <= 0;
+            inst_id_valid  <= 0;
+            opcode         <= 0;
+            vert_count     <= 0;
+            tri_count      <= 0;
+            vert_id_out    <= 0;
+            tri_id_out     <= 0;
+            vert_out       <= 0;
+            tri_out        <= 0;
+            transform_out  <= 0;
+            create_done    <= 0;
             error_flag   <= 0;
             error_status <= OK;
             spi_state <= LOAD_OP;
@@ -106,6 +126,7 @@ module spi_driver #(
             if(!CS_n && CS_ready) begin
                 case(spi_state)
                     LOAD_OP: begin
+                        // default values
                         vert_valid <= 0;
                         tri_valid  <= 0;
                         vert_hdr_valid <= 0;
@@ -119,9 +140,10 @@ module spi_driver #(
                         else if(OP_CREATE_TRI  == spi_in && !spi_oe) spi_state <= LOAD_TRI_COUNT;
                         else if(OP_CREATE_INST == spi_in && !spi_oe) spi_state <= LOAD_INST_DATA;
                         else if(OP_UPDATE_INST == spi_in && !spi_oe) spi_state <= LOAD_UPDATE_INST;
+                        else if(OP_IDLE == spi_in && !spi_oe) spi_state <= LOAD_OP;
                         else begin
                             opcode_valid <= 0;
-                            error_status  <= INVALID_OPCODE;
+                            error_status <= INVALID_OPCODE;
                             error_flag   <= 1;
                         end
                     end
@@ -284,6 +306,9 @@ module spi_driver #(
                             inst_valid <= 1;
                             nbl_ctr    <= 0;
                             spi_state  <= STATUS_OUT;
+                            spi_out_r <= error_flag ? error_status : OK;
+                            error_status <= OK;
+                            create_done <= 1;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
                             transform_out <= {transform_out[TRANS_W-5:0], spi_in};
@@ -316,18 +341,17 @@ module spi_driver #(
     always_ff @(posedge sck or posedge rst) begin
         if(rst)
             max_inst <= 0; // there is at least one transform inst 
-        else if (inst_id_out > max_inst)
+        else if (inst_id_out > max_inst && inst_valid)
             max_inst <= inst_id_out;
     end
     
     logic [3:0] ready_ctr;
     // Hold read for 8 cycles to remove junk data
-    always_ff @(posedge sck) begin
+    always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
             ready_ctr <= 0;
             CS_ready  <= 0;
-        end
-        if(!CS_n && !CS_ready) begin
+        end else if(!CS_n && !CS_ready) begin
             if(ready_ctr == 7) begin
                 ready_ctr <= 0;
                 CS_ready  <= 1;
@@ -339,9 +363,8 @@ module spi_driver #(
         end
     end
     
-    logic [1:0] out_ctr;
     // spi output logic    
-    always_ff @(negedge sck) begin
+    always_ff @(negedge sck or posedge rst) begin
         if (rst) begin
             spi_out_done <= 0;
             spi_oe       <= 0;
@@ -397,4 +420,8 @@ module spi_driver #(
             endcase
         end
     end
+    
+    assign spi_status_test = spi_state;
+    assign error_status_test = error_status;
+    
 endmodule
