@@ -2,6 +2,7 @@
 `default_nettype wire
 import buffer_id_pkg::*;
 import vertex_pkg::*;
+import transform_pkg::*;
 
 module raster_mem #(
     parameter MAX_VERT  = 8192, // 2^13 = 8192
@@ -20,9 +21,8 @@ module raster_mem #(
     parameter INST_W  = DATA_W * 12 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
 )(
     input  logic clk,
-    input  logic rst_sck, rst_raster,
+    input  logic rst,
     input  logic sck,
-    input  logic create_done,
 
     // SPI interface
     input  logic        opcode_valid,
@@ -127,7 +127,7 @@ module raster_mem #(
     ) inst_ram (
         // Port A - write side (SPI, sck)
         .clka   (sck),
-        .rsta   (rst_sck),
+        .rsta   (rst),
         .ena    (1'b1),
         .wea    (inst_we),          // single-bit or vector, XPM expects [WRITE_DATA_WIDTH_A/...] but for full-word use 1-bit bus may be OK
         .addra  (inst_id_in),       // From SPI driver
@@ -136,7 +136,7 @@ module raster_mem #(
     
         // Port B - read side (raster/frame, clk)
         .clkb   (clk),
-        .rstb   (rst_raster),
+        .rstb   (rst),
         .enb    (1'b1),
         .web    (1'b0),
         .addrb  (inst_id_rd),
@@ -168,21 +168,13 @@ module raster_mem #(
     // ===================================================
     //  SPI-Facing FSM
     // ===================================================
-    always_ff @(posedge sck or posedge rst_sck) begin
-        if (rst_sck) begin
+    always_ff @(posedge sck) begin
+        if (rst) begin
             vert_ctr  <= 0;
             tri_ctr   <= 0;
             vert_we   <= 0;
             tri_we    <= 0;
             inst_we   <= 0;
-            curr_vert_base  <= 0;
-            curr_vert_count <= 0;
-            curr_tri_base   <= 0;
-            curr_tri_count  <= 0;
-            vert_addr_wr    <= 0;
-            tri_addr_wr     <= 0;
-            tri_addr_wr     <= 0;
-            inst_din  <= 0;
             mem_state     <= IDLE;
         end else begin
             if (opcode_valid) begin
@@ -209,7 +201,7 @@ module raster_mem #(
                     curr_vert_count <= vert_count;
                     vert_ctr        <= 0;
                     vert_addr_wr    <= curr_vert_base;
-                    mem_state       <= CREATE_VERT_DATA;
+                    mem_state           <= CREATE_VERT_DATA;
                 end
 
                 CREATE_VERT_DATA: begin
@@ -231,7 +223,7 @@ module raster_mem #(
                     curr_tri_count <= tri_count;
                     tri_ctr        <= 0;
                     tri_addr_wr    <= curr_tri_base;
-                    mem_state      <= CREATE_TRI_DATA;
+                    mem_state          <= CREATE_TRI_DATA;
                 end
 
                 CREATE_TRI_DATA: begin
@@ -270,27 +262,9 @@ module raster_mem #(
     inst_t inst_cast;
     assign inst_cast = inst_t'(inst_dout_r); // r for register which is used for output
     assign transform_out       = transform_t'(inst_dout_r[TRANS_W+15:16]);
-    
-        logic done_sync_0;
-        logic done_sync_1;
-        always_ff @(posedge clk or posedge rst_raster) begin
-            if(rst_raster) begin
-                done_sync_0 <= 0;
-                done_sync_1 <= 0;
-            end else begin
-                done_sync_0 <= create_done; 
-                done_sync_1 <= done_sync_0;
-                if(done_sync_1) begin
-                    curr_vert_base_out  <= vert_table[inst_cast.vert_id].base;  
-                    curr_vert_count_out <= vert_table[inst_cast.vert_id].count; 
-                    curr_tri_base_out   <= tri_table[inst_cast.tri_id].base;    
-                    curr_tri_count_out  <= tri_table[inst_cast.tri_id].count;   
-                end
-            end
-        end
-//    assign curr_vert_base_out  = vert_table[inst_cast.vert_id].base;
-//    assign curr_vert_count_out = vert_table[inst_cast.vert_id].count;
-//    assign curr_tri_base_out   = tri_table[inst_cast.tri_id].base;
-//    assign curr_tri_count_out  = tri_table[inst_cast.tri_id].count;
+    assign curr_vert_base_out  = vert_table[inst_cast.vert_id].base;
+    assign curr_vert_count_out = vert_table[inst_cast.vert_id].count;
+    assign curr_tri_base_out   = tri_table[inst_cast.tri_id].base;
+    assign curr_tri_count_out  = tri_table[inst_cast.tri_id].count;
 
 endmodule

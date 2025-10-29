@@ -7,13 +7,13 @@ import vertex_pkg::*;
 import transformer_pkg::*;
 
 module top_raster_system #(
-    parameter MAX_VERT  = 256,     // 2^13 bit = 8192, 
-    parameter MAX_TRI   = 256,     // 2^13 bit = 8192,
-    parameter MAX_INST  = 256,      // maximum instences
-    parameter MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
-    parameter MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
-    parameter MAX_VERT_CNT = 4096,  // max vertices per buffer
-    parameter MAX_TRI_CNT  = 4096,  // max triangles per buffer
+    parameter MAX_VERT  = 256, // 2^13 = 8192, 16384
+    parameter MAX_TRI   = 256,
+    parameter MAX_INST  = 256,
+    parameter MAX_VERT_BUF = 256,
+    parameter MAX_TRI_BUF  = 256,
+    parameter MAX_VERT_CNT = 256,
+    parameter MAX_TRI_CNT = 256,
     parameter VTX_W     = 108,
     parameter VIDX_W    = $clog2(MAX_VERT_CNT),
     parameter TIDX_W    = $clog2(MAX_TRI_CNT),
@@ -23,66 +23,44 @@ module top_raster_system #(
 )(
     // === External signals ===
     input  logic clk_100m,       // raster clock
-    input  logic sck,            // SPI clock
-    input  logic rst_n,          // reset
-    input  logic CS_n,           // chip select
+    input  logic sck,       // SPI clock
+    input  logic rst_n,       // reset
+    input  logic CS_n,      // chip select
     inout  logic [3:0] spi_io,   // SPI inputs
     
-    output logic [7:0] vert_id,  // JB pmod
-    output logic [3:0] spi_status_test,   // JC pmod 1-4
+    output logic [7:0] vert_id, // JB pmod
+    output logic [3:0] spi_status_test, // JC pmod 1-4
     output logic [3:0] error_status_test, // JC pmod 7-10
-    
-    // JD
-    output logic rst_sck_out,
-    output logic clk_locked_out,
-    output logic output_bit,
-    
-    // LEDs
-//    output logic sck_out,
-    output logic rst_test_LED
+    output logic output_bit
 );
-    assign rst_test = rst_n;
-    assign rst_test_LED = rst_n;
+
     // ----------------------------------------------------------------
     // Clocks
     // ----------------------------------------------------------------
-    logic sck_backup;
-//    logic sck;
-    logic sck_no_use;
+    logic clk_pix;
     logic clk_render;
     logic clk_locked;
 
     gfx_clocks clocks_inst (
         .clk_100m   (clk_100m),
         .rst        (!rst_n),
-        .sck        (sck_no_use),
+        .clk_pix    (clk_pix),
         .clk_render (clk_render),
         .clk_locked (clk_locked)
     );
     
-    logic rst_raster;
-    logic clk_locked_sync_raster;
+    logic rst;
+    logic clk_locked_sync, rst_n_sync;
     
     // 2-stage synchronization
+    // protect for metastability
     always_ff @(posedge clk_render) begin
-        clk_locked_sync_raster <= clk_locked;
-        rst_raster <= (!clk_locked_sync_raster);
+        clk_locked_sync <= clk_locked;
     end
     
-    logic rst_sck;
-    assign rst_sck = !rst_n;
-//    logic clk_locked_sync_sck;
-//    logic sck_sync;
-    
-//    // 2-stage synchronization
-//    always_ff @(posedge sck) begin
-//        sck_sync <= !rst_n;
-//        rst_sck  <= sck_sync;
-//    end
-        
-    assign rst_sck_out = rst_sck;
-    assign clk_locked_out = clk_locked;
-//    assign sck_out = sck;
+    // synchronous reset
+    always_ff @(posedge clk_render) 
+        rst <= (!clk_locked_sync);
         
     // =============================
     // Internal signals
@@ -114,7 +92,6 @@ module top_raster_system #(
     
     // spi frame ↔ driver
     logic [7:0] max_inst;
-    logic       create_done;
     
     // Raster memory ↔ frame driver
     logic [$clog2(MAX_INST)-1:0] inst_id_rd;
@@ -185,7 +162,7 @@ module top_raster_system #(
         .TRANS_W(TRANS_W)
     ) u_spi_driver (
         .sck(sck),
-        .rst(rst_sck),
+        .rst(rst),
         .spi_io(spi_io),
         .CS_n(CS_n),
 
@@ -212,7 +189,6 @@ module top_raster_system #(
         .inst_id_out(inst_id_out),
         
         .max_inst(max_inst),
-        .create_done(create_done),
         
         .spi_status_test(spi_status_test),
         .error_status_test(error_status_test)
@@ -226,6 +202,8 @@ module top_raster_system #(
         .MAX_VERT(MAX_VERT),
         .MAX_TRI(MAX_TRI),
         .MAX_INST(MAX_INST),
+        .MAX_VERT_BUF(MAX_VERT_BUF),
+        .MAX_TRI_BUF(MAX_TRI_BUF),
         .MAX_VERT_CNT(MAX_VERT_CNT),
         .MAX_TRI_CNT(MAX_TRI_CNT),
         .VTX_W(VTX_W),
@@ -236,10 +214,8 @@ module top_raster_system #(
         .TRANS_W(TRANS_W)
     ) u_raster_mem (
         .clk(clk_render),
-        .rst_sck(rst_sck),
-        .rst_raster(rst_raster),
+        .rst(rst),
         .sck(sck),
-        .create_done(create_done),
 
         .opcode_valid(opcode_valid),
         .opcode(opcode),
@@ -291,9 +267,8 @@ module top_raster_system #(
         .TRI_W(TRI_W)
     ) u_frame_driver (
         .clk(clk_render),
-        .rst(rst_raster),
+        .rst(rst),
         .max_inst(max_inst),
-        .create_done(create_done),
 
         // Frame driver → memory
         .vert_addr(vert_addr_rd),
@@ -323,7 +298,7 @@ module top_raster_system #(
     transform_setup 
         u_transform_setup(
         .clk(clk_render),
-        .rst(rst_raster),
+        .rst(rst),
         
         .transform_setup(transform_setup),
         .in_valid(transform_setup_valid),
