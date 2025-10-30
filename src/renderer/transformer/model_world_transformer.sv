@@ -61,6 +61,7 @@ module model_world_transformer(
                     state <= IDLE;
                 end
             end
+            default: state <= IDLE;
             endcase
         end
     end 
