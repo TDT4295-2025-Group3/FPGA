@@ -81,6 +81,7 @@ module spi_driver #(
     logic [VTX_W-1:0] vert_r;
     logic spi_out_done;
     logic CS_ready;
+    logic CS_output_wait;
     logic [1:0] out_ctr;
     
     // spi states
@@ -119,6 +120,7 @@ module spi_driver #(
             tri_out        <= 0;
             transform_out  <= 0;
             create_done    <= 0;
+            CS_output_wait <= 0;
             error_flag   <= 0;
             error_status <= OK;
             spi_state <= LOAD_OP;
@@ -182,8 +184,9 @@ module spi_driver #(
                             if(!error_flag) vert_valid <= 1;
                              
                             if(vert_ctr ==  vert_count-1) begin
-                                spi_state <= CREATE_VERT_RESULT;
-                                vert_ctr <= 0;      
+                                vert_ctr  <= 0;   
+                                CS_output_wait  <= 1;
+                                spi_state <= CREATE_VERT_RESULT;   
                             end else if (vert_ctr >= MAX_VERT_CNT-1) begin
                                 error_status <= BUFFER_FULL;
                                 error_flag     <= 1;
@@ -232,8 +235,9 @@ module spi_driver #(
                             nbl_ctr   <= 0;
                     
                             if (tri_ctr == tri_count-1) begin 
+                                tri_ctr   <= 0;
+                                CS_output_wait <= 1;
                                 spi_state <= CREATE_TRI_RESULT;
-                                tri_ctr <= 0;
                             end else if (tri_ctr >= MAX_TRI_CNT-1) begin
                                 error_status <= BUFFER_FULL;
                                 error_flag     <= 1;
@@ -279,6 +283,8 @@ module spi_driver #(
                             transform_out <= {transform_out[TRANS_W-5:0], spi_in};
                             inst_valid <= 1;
                             nbl_ctr    <= 0;
+                            
+                            CS_output_wait  <= 1;
                             spi_state  <= CREATE_INST_RESULT;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
@@ -306,6 +312,8 @@ module spi_driver #(
                             inst_valid <= 1;
                             nbl_ctr    <= 0;
                             spi_state  <= STATUS_OUT;
+                            
+                            CS_output_wait <= 1;
                             spi_out_r <= error_flag ? error_status : OK;
                             error_status <= OK;
                             create_done <= 1;
@@ -321,15 +329,17 @@ module spi_driver #(
                         vert_valid <= 0;
                         tri_valid  <= 0;
                         inst_valid <= 0;
+                        CS_output_wait <= 0;
                         if(spi_out_done) begin
                             spi_state <= STATUS_OUT;
                             spi_out_r <= error_flag ? error_status : OK;
                             error_status <= OK;
                             error_flag   <= 0;
-                        end
+                        end 
                     end
 
                     STATUS_OUT: begin
+                        CS_output_wait <= 0;
                         if(spi_out_done)
                             spi_state <= LOAD_OP;
                     end
@@ -346,11 +356,17 @@ module spi_driver #(
     end
     
     logic [3:0] ready_ctr;
+    logic       output_ready;
+    logic       waiting;
+    assign output_ready = spi_state == CREATE_VERT_RESULT || spi_state == CREATE_TRI_RESULT || 
+                          spi_state == CREATE_INST_RESULT || spi_state == STATUS_OUT;
     // Hold read for 8 cycles to remove junk data
     always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
             ready_ctr <= 0;
             CS_ready  <= 0;
+        end else if(output_ready && !CS_output_wait && !waiting) begin;
+            CS_ready  <= 1;
         end else if(!CS_n && !CS_ready) begin
             if(ready_ctr == 7) begin
                 ready_ctr <= 0;
@@ -358,8 +374,22 @@ module spi_driver #(
             end else begin
                 ready_ctr <= ready_ctr +1;
             end
-        end else if(CS_n && CS_ready) begin
+        end else if(CS_n && CS_ready || CS_output_wait) begin
             CS_ready <= 0;
+        end
+    end
+    
+    logic [3:0] wait_ctr;
+    always_ff @(posedge sck or posedge rst) begin
+        if(rst) begin
+            waiting  <= 0;
+            wait_ctr <= 0;
+        end else if(wait_ctr == 6) begin
+            waiting  <= 0;
+            wait_ctr <= 0;
+        end else if(CS_output_wait || waiting) begin
+            wait_ctr  <= wait_ctr +1;
+            waiting <= 1;
         end
     end
     
@@ -369,15 +399,15 @@ module spi_driver #(
             spi_out_done <= 0;
             spi_oe       <= 0;
             out_ctr      <= 0;
-        end else if (!CS_n && CS_ready) begin
+        end else if (!CS_n && !CS_output_wait && !waiting) begin // && CS_ready
             spi_out_done <= 0; // default not done
-            spi_oe      <= 0; // default spi_in
+            spi_oe       <= 0; // default spi_in
             case (spi_state)
                 CREATE_VERT_RESULT: begin
                     spi_oe  <= 1;
                     if (out_ctr == 1) begin
                         spi_out <= vert_id_out[3:0];
-                        out_ctr   <= 0;
+                        out_ctr <= 0;
                         spi_out_done <= 1; // signal done to posedge FSM
                     end else begin
                         out_ctr <= out_ctr + 1;
