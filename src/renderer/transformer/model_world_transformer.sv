@@ -28,54 +28,58 @@ module model_world_transformer(
 
     state_t state;
 
-    model_world_t model_world_r;
+    model_world_t model_world_in_r;
+    triangle_t    triangle_r;
     logic [1:0] vertex_idx;
     logic last_vertex_done;
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            model_world_r <= '0;
-            state         <= IDLE;
-            vertex_idx    <= 2'd0;
+            model_world_in_r <= '0;
+            triangle_r       <= '0;
+            state            <= IDLE;
+            vertex_idx       <= 2'd0;
         end else begin
-            if (state == IDLE) begin
+            unique case (state)
+            IDLE: begin
                 if (in_valid && in_ready) begin
-                    model_world_r <= model_world;
-                    vertex_idx    <= 2'd0;
-                    state         <= PROCESS;
+                    model_world_in_r <= model_world;
+                    triangle_r       <= '0;
+                    vertex_idx       <= 2'd0;
+                    state            <= PROCESS;
                 end
-            end else if (state == PROCESS) begin
+            end
+            PROCESS: begin
                 if (vertex_idx != 2'd3) begin
                     vertex_idx <= vertex_idx + 2'd1;
                 end
                 if (last_vertex_done) begin
                     state <= DONE;
                 end
-            end else if (state == DONE) begin
+            end
+            DONE: begin
                 if (out_ready && out_valid) begin
                     state <= IDLE;
                 end
             end
+            endcase
         end
     end 
 
-    vertex_stage_t scaled_vertex, rotated_vertex, translated_vertex;
     vertex_stage_t current_vertex;
     always_comb begin
+        current_vertex = '0;
         if (state == PROCESS && (vertex_idx != 2'd3)) begin
             unique case (vertex_idx)
-                2'd0: current_vertex.vertex = model_world_r.triangle.v0;
-                2'd1: current_vertex.vertex = model_world_r.triangle.v1;
-                2'd2: current_vertex.vertex = model_world_r.triangle.v2;
+                2'd0: current_vertex.vertex = model_world_in_r.triangle.v0;
+                2'd1: current_vertex.vertex = model_world_in_r.triangle.v1;
+                2'd2: current_vertex.vertex = model_world_in_r.triangle.v2;
                 default: current_vertex.vertex = '0;
             endcase
             current_vertex.idx   = vertex_idx;
             current_vertex.valid = 1'b1;
-        end else begin
-            current_vertex.vertex = '0;
-            current_vertex.idx   = 2'd0;
-            current_vertex.valid = 1'b0;
         end
     end
+    vertex_stage_t scaled_vertex, rotated_vertex, translated_vertex;
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
@@ -87,17 +91,19 @@ module model_world_transformer(
             rotated_vertex.valid    <= 1'b0;
             translated_vertex.valid <= 1'b0;
 
+            // Scale
             if (current_vertex.valid) begin
-                scaled_vertex.vertex.pos.x <= mul_transform(current_vertex.vertex.pos.x, model_world_r.model.scale.x);
-                scaled_vertex.vertex.pos.y <= mul_transform(current_vertex.vertex.pos.y, model_world_r.model.scale.y);
-                scaled_vertex.vertex.pos.z <= mul_transform(current_vertex.vertex.pos.z, model_world_r.model.scale.z);
-                scaled_vertex.vertex.color  <= current_vertex.vertex.color;
+                scaled_vertex.vertex.pos.x <= mul_transform(current_vertex.vertex.pos.x, model_world_in_r.model.scale.x);
+                scaled_vertex.vertex.pos.y <= mul_transform(current_vertex.vertex.pos.y, model_world_in_r.model.scale.y);
+                scaled_vertex.vertex.pos.z <= mul_transform(current_vertex.vertex.pos.z, model_world_in_r.model.scale.z);
+                scaled_vertex.vertex.color <= current_vertex.vertex.color;
                 scaled_vertex.idx          <= current_vertex.idx;
-                scaled_vertex.valid        <= current_vertex.valid;
+                scaled_vertex.valid        <= 1'b1;
             end
 
+            // Rotate
             if (scaled_vertex.valid) begin
-                matrix_t R = model_world_r.model.rot_mtx;
+                matrix_t R = model_world_in_r.model.rot_mtx;
                 rotated_vertex.vertex.pos.x <= dot3_transform(R.R11, R.R12, R.R13,
                                                               scaled_vertex.vertex.pos.x,
                                                               scaled_vertex.vertex.pos.y,
@@ -110,25 +116,27 @@ module model_world_transformer(
                                                               scaled_vertex.vertex.pos.x,
                                                               scaled_vertex.vertex.pos.y,
                                                               scaled_vertex.vertex.pos.z);
-                rotated_vertex.vertex.color  <= scaled_vertex.vertex.color;
+                rotated_vertex.vertex.color <= scaled_vertex.vertex.color;
                 rotated_vertex.idx          <= scaled_vertex.idx;
-                rotated_vertex.valid        <= scaled_vertex.valid;
+                rotated_vertex.valid        <= 1'b1;
             end
 
+            // Translate
             if (rotated_vertex.valid) begin
-                translated_vertex.vertex.pos.x <= rotated_vertex.vertex.pos.x + model_world_r.model.pos.x;
-                translated_vertex.vertex.pos.y <= rotated_vertex.vertex.pos.y + model_world_r.model.pos.y;
-                translated_vertex.vertex.pos.z <= rotated_vertex.vertex.pos.z + model_world_r.model.pos.z;
-                translated_vertex.vertex.color  <= rotated_vertex.vertex.color;
+                translated_vertex.vertex.pos.x <= rotated_vertex.vertex.pos.x + model_world_in_r.model.pos.x;
+                translated_vertex.vertex.pos.y <= rotated_vertex.vertex.pos.y + model_world_in_r.model.pos.y;
+                translated_vertex.vertex.pos.z <= rotated_vertex.vertex.pos.z + model_world_in_r.model.pos.z;
+                translated_vertex.vertex.color <= rotated_vertex.vertex.color;
                 translated_vertex.idx          <= rotated_vertex.idx;
-                translated_vertex.valid        <= rotated_vertex.valid;
+                translated_vertex.valid        <= 1'b1;
             end
 
+            // Writeback to triangle accumulator (single writer)
             if (translated_vertex.valid) begin
                 unique case (translated_vertex.idx)
-                    2'd0: model_world_r.triangle.v0   <= translated_vertex.vertex;
-                    2'd1: model_world_r.triangle.v1   <= translated_vertex.vertex;
-                    2'd2: model_world_r.triangle.v2   <= translated_vertex.vertex;
+                    2'd0: triangle_r.v0 <= translated_vertex.vertex;
+                    2'd1: triangle_r.v1 <= translated_vertex.vertex;
+                    2'd2: triangle_r.v2 <= translated_vertex.vertex;
                     default: ;
                 endcase
             end
@@ -137,7 +145,7 @@ module model_world_transformer(
 
     assign last_vertex_done = translated_vertex.valid && (translated_vertex.idx == 2'd2);
 
-    assign out_world_camera = '{triangle: model_world_r.triangle, camera: model_world_r.camera};
+    assign out_world_camera = '{triangle: triangle_r, camera: model_world_in_r.camera };
 
     assign in_ready       = (state == IDLE);
     assign out_valid      = (state == DONE);
