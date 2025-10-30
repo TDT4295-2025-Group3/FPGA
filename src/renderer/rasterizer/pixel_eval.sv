@@ -20,8 +20,6 @@ module pixel_eval #(
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y,
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y,
     input  wire logic signed [DENOM_INV_BITS-1:0]  denom_inv,    // signed: 1/denom
-    input  wire logic [$clog2(WIDTH)-1:0]           bbox_min_x, bbox_max_x,
-    input  wire logic [$clog2(HEIGHT)-1:0]          bbox_min_y, bbox_max_y,
     input  wire color12_t                           v0_color, v1_color, v2_color,
     input  wire q16_16_t                            v0_depth, v1_depth, v2_depth,
     input  wire logic                               in_valid,
@@ -42,8 +40,6 @@ module pixel_eval #(
         logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y;
         logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y;
         logic signed [DENOM_INV_BITS-1:0]  denom_inv; // signed 1/denom
-        logic [$clog2(WIDTH)-1:0]           bbox_min_x, bbox_max_x;
-        logic [$clog2(HEIGHT)-1:0]          bbox_min_y, bbox_max_y;
         color12_t                           v0_color, v1_color, v2_color;
         q16_16_t                            v0_depth, v1_depth, v2_depth;
     } pixel_state_t;
@@ -124,10 +120,6 @@ module pixel_eval #(
         s1_next.pixel.e1x        = e1x;
         s1_next.pixel.e1y        = e1y;
         s1_next.pixel.denom_inv  = denom_inv;     // signed 1/denom
-        s1_next.pixel.bbox_min_x = bbox_min_x;
-        s1_next.pixel.bbox_max_x = bbox_max_x;
-        s1_next.pixel.bbox_min_y = bbox_min_y;
-        s1_next.pixel.bbox_max_y = bbox_max_y;
         s1_next.pixel.v0_color   = v0_color;
         s1_next.pixel.v1_color   = v1_color;
         s1_next.pixel.v2_color   = v2_color;

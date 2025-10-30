@@ -2,6 +2,7 @@
 `timescale 1ns / 1ps
 
 import math_pkg::*;
+import color_pkg::*;
 
 module pixel_traversal #(
     parameter int WIDTH  = 320,
@@ -29,9 +30,7 @@ module pixel_traversal #(
     output      logic signed [16+SUBPIXEL_BITS-1:0] out_v0x, out_v0y,
     output      logic signed [16+SUBPIXEL_BITS-1:0] out_e0x, out_e0y,
     output      logic signed [16+SUBPIXEL_BITS-1:0] out_e1x, out_e1y,
-    output      logic signed [DENOM_INV_BITS-1:0]  out_denom_inv,
-    output      logic [$clog2(WIDTH)-1:0]           out_bbox_min_x, out_bbox_max_x,
-    output      logic [$clog2(HEIGHT)-1:0]          out_bbox_min_y, out_bbox_max_y,
+    output      logic signed [DENOM_INV_BITS-1:0]   out_denom_inv,
     output      color12_t                           out_v0_color, out_v1_color, out_v2_color,
     output      q16_16_t                            out_v0_depth, out_v1_depth, out_v2_depth,
     output      logic                               out_valid,
@@ -75,10 +74,6 @@ module pixel_traversal #(
     assign out_e1x        = tri_e1x;
     assign out_e1y        = tri_e1y;
     assign out_denom_inv  = tri_denom_inv;
-    assign out_bbox_min_x = tri_bbox_min_x;
-    assign out_bbox_max_x = tri_bbox_max_x;
-    assign out_bbox_min_y = tri_bbox_min_y;
-    assign out_bbox_max_y = tri_bbox_max_y;
     assign out_v0_color   = tri_v0_color;
     assign out_v1_color   = tri_v1_color;
     assign out_v2_color   = tri_v2_color;

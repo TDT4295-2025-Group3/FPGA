@@ -84,8 +84,6 @@ module rasterizer #(
     logic signed [16+SUBPIXEL_BITS-1:0] pt_e0x, pt_e0y;
     logic signed [16+SUBPIXEL_BITS-1:0] pt_e1x, pt_e1y;
     logic signed [DENOM_INV_BITS-1:0]  pt_denom_inv;
-    logic [$clog2(WIDTH)-1:0]           pt_bbox_min_x, pt_bbox_max_x;
-    logic [$clog2(HEIGHT)-1:0]          pt_bbox_min_y, pt_bbox_max_y;
     color12_t                           pt_v0_color, pt_v1_color, pt_v2_color;
     q16_16_t                            pt_v0_depth, pt_v1_depth, pt_v2_depth;
 
@@ -122,8 +120,6 @@ module rasterizer #(
         .out_e0x(pt_e0x), .out_e0y(pt_e0y),
         .out_e1x(pt_e1x), .out_e1y(pt_e1y),
         .out_denom_inv(pt_denom_inv),
-        .out_bbox_min_x(pt_bbox_min_x), .out_bbox_max_x(pt_bbox_max_x),
-        .out_bbox_min_y(pt_bbox_min_y), .out_bbox_max_y(pt_bbox_max_y),
         .out_v0_color(pt_v0_color), .out_v1_color(pt_v1_color), .out_v2_color(pt_v2_color),
         .out_v0_depth(pt_v0_depth), .out_v1_depth(pt_v1_depth), .out_v2_depth(pt_v2_depth),
 
@@ -157,8 +153,6 @@ module rasterizer #(
         .e0x(pt_e0x), .e0y(pt_e0y),
         .e1x(pt_e1x), .e1y(pt_e1y),
         .denom_inv(pt_denom_inv),
-        .bbox_min_x(pt_bbox_min_x), .bbox_max_x(pt_bbox_max_x),
-        .bbox_min_y(pt_bbox_min_y), .bbox_max_y(pt_bbox_max_y),
         .v0_color(pt_v0_color), .v1_color(pt_v1_color), .v2_color(pt_v2_color),
         .v0_depth(pt_v0_depth), .v1_depth(pt_v1_depth), .v2_depth(pt_v2_depth),
 
