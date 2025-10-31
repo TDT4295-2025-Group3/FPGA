@@ -83,7 +83,8 @@ module depthbuffer #(
     // RAW bypass applied *outside* the RAM to keep BRAM inference clean
     always_comb begin
         depth_read = depth_read_bram;
-        if (wr_bypass_vld && (wr_bypass_addr == addr_reg)) begin
+        // FIX: use S2-aligned address for bypass (addr_wr_s2), not S1 addr_reg
+        if (wr_bypass_vld && (wr_bypass_addr == addr_wr_s2)) begin
             depth_read = wr_bypass_data;
         end
     end

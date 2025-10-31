@@ -268,6 +268,7 @@ module pixel_eval #(
     end
 
     // Stage 6: interpolation using precomputed weights
+    logic signed [63:0] tmp_depth_u, tmp_depth_v, tmp_depth_w;
     always_comb begin
         s6_next.valid = s5_reg.valid;
         s6_next.pixel = s5_reg.pixel;
@@ -286,9 +287,16 @@ module pixel_eval #(
                                    (s5_reg.v_w * $unsigned(s5_reg.pixel.v1_color[3:0])) +
                                    (s5_reg.w_w * $unsigned(s5_reg.pixel.v2_color[3:0])) + 32'h0000_8000) >>> 16;
 
-            s6_next.depth       = ((s5_reg.u_w * s5_reg.pixel.v0_depth) +
-                                   (s5_reg.v_w * s5_reg.pixel.v1_depth) +
-                                   (s5_reg.w_w * s5_reg.pixel.v2_depth) + 32'h0000_8000) >>> 16;
+            tmp_depth_u = s5_reg.u_w * s5_reg.pixel.v0_depth;
+            tmp_depth_v = s5_reg.v_w * s5_reg.pixel.v1_depth;
+            tmp_depth_w = s5_reg.w_w * s5_reg.pixel.v2_depth;
+            s6_next.depth       = ((tmp_depth_u + tmp_depth_v + tmp_depth_w + 32'h0000_8000) >>> 16);
+
+            //if new depth is bigger than the biggest depth or less than the smallest depth, clamp it
+            if (s6_next.depth > max3(s5_reg.pixel.v0_depth, s5_reg.pixel.v1_depth, s5_reg.pixel.v2_depth) ||
+                s6_next.depth < min3(s5_reg.pixel.v0_depth, s5_reg.pixel.v1_depth, s5_reg.pixel.v2_depth)) begin
+                $display("Warning: depth interpolation out of bounds: %0d (v0: %0d, v1: %0d, v2: %0d)", s6_next.depth, s5_reg.pixel.v0_depth, s5_reg.pixel.v1_depth, s5_reg.pixel.v2_depth);
+            end
         end else begin
             s6_next.color = '0;
             s6_next.depth = '0;
