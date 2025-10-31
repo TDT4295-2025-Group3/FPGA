@@ -168,6 +168,28 @@ module top (
     // ----------------------------------------------------------------
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
+
+    logic [7:0]  angle_idx;
+    q16_16_t sin_val, cos_val;
+
+    always_ff @(posedge clk_render or posedge rst_render) begin
+        if (rst_render)
+            angle_idx <= 8'd0;
+        else if (begin_frame)
+            angle_idx <= angle_idx + 8'd1;
+    end
+
+    sincos_feeder #(
+        .N_ANGLES(256),
+        .MEMFILE("sincos.mem")
+    ) sincos_inst (
+        .clk        (clk_render),
+        .rst        (rst_render),
+        .angle_idx  (angle_idx),
+        .out_sin    (sin_val),
+        .out_cos    (cos_val)
+    );
+
     localparam color12_t CLEAR_COLOR = 12'h223;
     localparam int       FOCAL_LENGTH  = 256;
 
@@ -189,9 +211,10 @@ module top (
     // assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
     // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
     assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
-    assign transform.rot_sin            = '{x:32'h0000_8000, y:32'hFFFF_8000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
-    assign transform.rot_cos            = '{x:32'h0000_DDB4, y:32'h0000_DDB4, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1)
+    assign transform.rot_sin            = '{x:32'h0000_8000, y:sin_val, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
+    assign transform.rot_cos            = '{x:32'h0000_DDB4, y:cos_val, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1)
     assign transform.scale              = '{x:32'h0000_6666, y:32'h0000_6666, z:32'h0000_6666}; // scale = (0.4, 0.4, 0.4)
+
 
     // Fill transform_setup bus: camera first (one cycle), then triangles with model transform
     assign transform_setup.triangle                 = feeder_tri;
