@@ -35,7 +35,6 @@ module model_world_transformer(
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             model_world_in_r <= '0;
-            triangle_r       <= '0;
             state            <= IDLE;
             vertex_idx       <= 2'd0;
         end else begin
@@ -43,7 +42,6 @@ module model_world_transformer(
             IDLE: begin
                 if (in_valid && in_ready) begin
                     model_world_in_r <= model_world;
-                    triangle_r       <= '0;
                     vertex_idx       <= 2'd0;
                     state            <= PROCESS;
                 end
@@ -89,6 +87,10 @@ module model_world_transformer(
         rotated_vertex_d    = '0;
         translated_vertex_d = '0;
         triangle_r_d        = triangle_r; // hold by default
+
+        if (state == IDLE && in_valid && in_ready) begin
+            triangle_r_d = '0;
+        end
 
         // Scale
         if (current_vertex.valid) begin
@@ -146,6 +148,7 @@ module model_world_transformer(
             scaled_vertex     <= '0;
             rotated_vertex    <= '0;
             translated_vertex <= '0;
+            triangle_r        <= '0;
         end else begin
             scaled_vertex     <= scaled_vertex_d;
             rotated_vertex    <= rotated_vertex_d;
