@@ -91,8 +91,10 @@ module depthbuffer #(
     assign passed_depth_test = (in_compare_depth_s2 == 1'b0) || ($signed(in_depth_s2) < $signed(depth_read));
 
     // --- Pipeline stage 3: comparison + writeback ---
-    always_ff @(posedge clk or posedge rst) begin
+    always_ff @(posedge clk) begin
+        /* verilator lint_off SYNCASYNCNET */
         if (rst) begin
+            /* verilator lint_off SYNCASYNCNET */
             out_valid      <= 1'b0;
             out_color      <= 12'b0;
             out_x          <= 16'b0;
