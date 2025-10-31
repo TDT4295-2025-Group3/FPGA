@@ -91,7 +91,7 @@ module top (
     logic        renderer_ready;
 
     logic begin_frame;
-    always_ff @(posedge clk_render) begin
+    always_ff @(posedge clk_render or posedge rst_render) begin
         if (rst_render)
             begin_frame <= 1'b0;
         else
@@ -105,7 +105,7 @@ module top (
     logic feeder_valid, feeder_busy;
 
     q16_16_t offset_x, offset_y;
-    always_ff @(posedge clk_render) begin
+    always_ff @(posedge clk_render or posedge rst_render) begin
         if (rst_render)
             offset_x <= -($signed(FB_WIDTH) <<< 15);
         else if (begin_frame) begin
@@ -116,7 +116,7 @@ module top (
         end
     end
 
-    always_ff @(posedge clk_render) begin
+    always_ff @(posedge clk_render or posedge rst_render) begin
         if (rst_render)
             offset_y <= 11'd0;
         else if (begin_frame) begin
@@ -130,7 +130,7 @@ module top (
     // ---------- Camera-first sequencing ----------
     // 1) Generate a one-cycle camera pulse at frame start
     logic cam_req;
-    always_ff @(posedge clk_render) begin
+    always_ff @(posedge clk_render or posedge rst_render) begin
         if (rst_render)
             cam_req <= 1'b0;
         else if (frame_start_render && !renderer_busy)
@@ -142,7 +142,7 @@ module top (
 
     // 2) Start feeder one cycle AFTER the camera pulse
     logic feeder_begin_frame;
-    always_ff @(posedge clk_render) begin
+    always_ff @(posedge clk_render or posedge rst_render) begin
         if (rst_render)
             feeder_begin_frame <= 1'b0;
         else

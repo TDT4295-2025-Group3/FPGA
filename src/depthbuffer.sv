@@ -91,7 +91,7 @@ module depthbuffer #(
     assign passed_depth_test = (in_compare_depth_s2 == 1'b0) || ($signed(in_depth_s2) < $signed(depth_read));
 
     // --- Pipeline stage 3: comparison + writeback ---
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             out_valid      <= 1'b0;
             out_color      <= 12'b0;
