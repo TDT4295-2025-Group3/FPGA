@@ -68,7 +68,7 @@ module render_manager #(
             end
 
             FILL_WAIT: begin
-                if (!screen_filler_busy && triangle_valid) begin
+                if (!screen_filler_busy) begin
                     next_state = TRIANGLE;
                 end
             end
@@ -82,7 +82,14 @@ module render_manager #(
         endcase
     end
 
-    assign triangle_ready = (state == TRIANGLE) ? transformer_in_ready : 1'b0;
+    always_comb begin
+        unique case (state)
+            FILL:       triangle_ready = 1'b0;
+            FILL_WAIT:  triangle_ready = 1'b0;
+            TRIANGLE:   triangle_ready = transformer_in_ready;
+            default:    triangle_ready = 1'b0;
+        endcase
+    end
     assign busy = (state != TRIANGLE) ? screen_filler_busy : (rasterizer_busy || transformer_busy);
 
     always_comb begin

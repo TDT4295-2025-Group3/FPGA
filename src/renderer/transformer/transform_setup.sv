@@ -106,11 +106,7 @@ module transform_setup (
                         out_model_world.model.rot_mtx.R31 <= R31;
                         out_model_world.model.rot_mtx.R32 <= R32;
                         out_model_world.model.rot_mtx.R33 <= R33;
-
-                        // === CHANGE #1: Always assert valid in OUTPUT (triangle-only allowed)
                         out_valid <= 1'b1;
-
-                        // === CHANGE #2: Drain when sink is ready (no dependence on prior out_valid)
                         if (out_ready && out_valid) begin
                             state <= IDLE;
                             out_valid <= 1'b0;
@@ -119,6 +115,7 @@ module transform_setup (
                         end
 
                     end else if (transform_setup_r.camera_transform_valid) begin
+                        out_model_world.triangle <= transform_setup_r.triangle;
                         out_model_world.camera.pos   <= transform_setup_r.camera_transform.pos;
                         out_model_world.camera.scale <= transform_setup_r.camera_transform.scale;
                         out_model_world.camera.rot_mtx.R11 <= R11;
@@ -130,8 +127,12 @@ module transform_setup (
                         out_model_world.camera.rot_mtx.R31 <= R31;
                         out_model_world.camera.rot_mtx.R32 <= R32;
                         out_model_world.camera.rot_mtx.R33 <= R33;
-                        state <= IDLE;
-                        transform_setup_r.camera_transform_valid <= 1'b0;
+                        out_valid <= 1'b1;
+                        if (out_ready && out_valid) begin
+                            state <= IDLE;
+                            out_valid <= 1'b0;
+                            transform_setup_r.camera_transform_valid <= 1'b0;
+                        end
                     end
                 end
 

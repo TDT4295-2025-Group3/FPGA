@@ -23,12 +23,18 @@ module top (
     logic clk_render;
     logic clk_locked;
 
+    // new per-domain synchronous resets
+    logic rst_pix;
+    logic rst_render;
+
     gfx_clocks clocks_inst (
         .clk_100m   (clk_100m),
         .rst        (!btn_rst_n),
         .clk_pix    (clk_pix),
         .clk_render (clk_render),
-        .clk_locked (clk_locked)
+        .clk_locked (clk_locked),
+        .rst_pix    (rst_pix),
+        .rst_render (rst_render)
     );
 
     // ----------------------------------------------------------------
@@ -40,7 +46,7 @@ module top (
 
     display_480p display_inst (
         .clk_pix,
-        .rst_pix(!clk_locked),
+        .rst_pix(rst_pix),
         .hsync,
         .vsync,
         .de,
@@ -85,8 +91,8 @@ module top (
     logic        renderer_ready;
 
     logic begin_frame;
-    always_ff @(posedge clk_render or negedge btn_rst_n) begin
-        if (!btn_rst_n)
+    always_ff @(posedge clk_render) begin
+        if (rst_render)
             begin_frame <= 1'b0;
         else
             begin_frame <= frame_start_render && !renderer_busy;
@@ -99,8 +105,8 @@ module top (
     logic feeder_valid, feeder_busy;
 
     q16_16_t offset_x, offset_y;
-    always_ff @(posedge clk_render or negedge btn_rst_n) begin
-        if (!btn_rst_n)
+    always_ff @(posedge clk_render) begin
+        if (rst_render)
             offset_x <= -($signed(FB_WIDTH) <<< 15);
         else if (begin_frame) begin
             if (offset_x >= ($signed(FB_WIDTH) <<< 15))
@@ -110,8 +116,8 @@ module top (
         end
     end
 
-    always_ff @(posedge clk_render or negedge btn_rst_n) begin
-        if (!btn_rst_n)
+    always_ff @(posedge clk_render) begin
+        if (rst_render)
             offset_y <= 11'd0;
         else if (begin_frame) begin
             if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
@@ -124,8 +130,8 @@ module top (
     // ---------- Camera-first sequencing ----------
     // 1) Generate a one-cycle camera pulse at frame start
     logic cam_req;
-    always_ff @(posedge clk_render or negedge btn_rst_n) begin
-        if (!btn_rst_n)
+    always_ff @(posedge clk_render) begin
+        if (rst_render)
             cam_req <= 1'b0;
         else if (frame_start_render && !renderer_busy)
             cam_req <= 1'b1;   // request camera this frame
@@ -136,8 +142,8 @@ module top (
 
     // 2) Start feeder one cycle AFTER the camera pulse
     logic feeder_begin_frame;
-    always_ff @(posedge clk_render or negedge btn_rst_n) begin
-        if (!btn_rst_n)
+    always_ff @(posedge clk_render) begin
+        if (rst_render)
             feeder_begin_frame <= 1'b0;
         else
             feeder_begin_frame <= cam_pulse; // delayed kick for feeder
@@ -149,7 +155,7 @@ module top (
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
-        .rst        (!btn_rst_n),
+        .rst        (rst_render),
         .begin_frame(feeder_begin_frame), // was begin_frame
         .out_valid  (feeder_valid),
         .out_ready  (renderer_ready),
@@ -204,7 +210,7 @@ module top (
         .BACKFACE_CULLING    (1'b1)
     ) render_mgr_inst (
         .clk              (clk_render),
-        .rst              (!btn_rst_n),
+        .rst              (rst_render),
 
         .begin_frame      (frame_start_render),
 
@@ -238,7 +244,7 @@ module top (
         .FB_HEIGHT(FB_HEIGHT)
     ) depthbuffer_inst (
         .clk             (clk_render),
-        .rst             (!btn_rst_n),
+        .rst             (rst_render),
 
         .in_valid        (rm_out_valid),
         .in_compare_depth(rm_use_depth),
@@ -263,7 +269,7 @@ module top (
         .clk_write(clk_render),
         .clk_read (clk_pix),
         .swap     (begin_frame),
-        .rst      (!btn_rst_n),
+        .rst      (rst_render),
 
         .write_enable(db_out_valid),
         .write_x     (db_out_x[7:0]),
