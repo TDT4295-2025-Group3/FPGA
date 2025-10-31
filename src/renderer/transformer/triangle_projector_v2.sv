@@ -3,7 +3,7 @@
 import vertex_pkg::*;
 import math_pkg::*;
 
-module triangle_projector(
+module triangle_projector_v2(
     input  logic clk,
     input  logic rst,
 
@@ -36,7 +36,7 @@ module triangle_projector(
     q16_16_t div_val;
     q16_16_t z_inv;
 
-    divu #(.WIDTH(32), .FBITS(16)) u_divu (
+    div #(.WIDTH(32), .FBITS(16)) u_divu (
         .clk   (clk),
         .rst   (rst),
         .start (load_div_done),

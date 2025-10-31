@@ -47,11 +47,52 @@ module frame_driver #(
     output logic busy
     
 );
-
     // Internal registers
     logic [VIDX_W-1:0] vert_ctr;
     logic [TIDX_W-1:0] tri_ctr;
     logic [7:0] next_inst_id;
+    logic [1:0] wait_ctr;
+//    logic [7:0] max_inst_sync_0;
+//    logic [7:0] max_inst_sync;
+//    logic create_done_sync_0;
+//    logic create_done_sync;
+    
+    
+//    logic upload_done_0, upload_done_1;
+//    always_ff @(posedge clk or posedge rst) begin
+//        if(rst) begin
+//            {upload_done_0, upload_done_1} <= 0;
+//        end else begin
+//            upload_done_0 <= create_done;
+//            upload_done_1 <= upload_done_0;
+//        end
+//    end
+    
+//    wire upload_done_pulse = upload_done_1 & ~upload_done_0;
+    
+//    always_ff @(posedge clk or posedge rst) begin
+//        if(rst) begin
+//            max_inst_sync <= 0;
+//            create_done_sync <= 0;
+//        end else if(upload_done_pulse) begin
+//            create_done_sync <= create_done; // perfectly stable and atomic
+//            max_inst_sync    <= max_inst;
+//        end
+//    end
+    
+//    always_ff @(posedge clk or posedge rst) begin 
+//        if(rst) begin 
+//            max_inst_sync_0 <= 0;
+//            max_inst_sync   <= 0;
+//            create_done_sync_0 <= 0;
+//            create_done_sync   <= 0;
+//        end else begin 
+//            max_inst_sync_0 <= max_inst;
+//            max_inst_sync   <= max_inst_sync_0;
+//            create_done_sync_0 <= create_done;
+//            create_done_sync   <= create_done_sync_0;
+//        end
+//    end
 
     logic [TRI_W-1:0] idx_tri_reg;
     vertex_t v_collect[0:2];
@@ -89,6 +130,7 @@ module frame_driver #(
             next_inst_id  <= '0;
             inst_id_rd    <= '0;
             draw_done     <= '0;
+            wait_ctr      <= '0;
             transform_setup_r <= '0;
         end else if(create_done) begin
             // Default outputs per cycle
@@ -108,12 +150,18 @@ module frame_driver #(
                     end
                 end
                 
-                // curr_tri_base <= tri_table[inst_table[inst_id].base];
-                // tansform <= transform_ram[inst_id];
+                // ctr 0: inst_dout_r   <= inst_ram[inst_id];
+                // ctr 1: wait?
+                // ctr 2: curr_tri_base <= tri_table_ram[inst_dout_r.base];
                 LOAD_BASE: begin
-                    frame_state <= REQUEST_TRI;
-                    if(inst_id_rd == 0) 
-                        frame_state <= OUTPUT_TRI;
+                    if(wait_ctr == 2) begin
+                        wait_ctr <= 0;
+                        frame_state <= REQUEST_TRI;
+                        if(inst_id_rd == 0)
+                            frame_state <= OUTPUT_TRI;
+                    end else 
+                        wait_ctr <= wait_ctr+1;
+                    
                 end
 
                 REQUEST_TRI: begin
