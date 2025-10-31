@@ -82,6 +82,20 @@ int main(int argc, char **argv)
         {
             // Toggle 100 MHz clock
             top->clk_100m = !top->clk_100m;
+
+            SDL_PumpEvents();
+            const Uint8 *state = SDL_GetKeyboardState(NULL);
+            uint8_t switches = 0;
+            if (state[SDL_SCANCODE_1])
+                switches |= (1 << 0);
+            if (state[SDL_SCANCODE_2])
+                switches |= (1 << 1);
+            if (state[SDL_SCANCODE_3])
+                switches |= (1 << 2);
+            if (state[SDL_SCANCODE_4])
+                switches |= (1 << 3);
+            top->sw = switches;
+
             top->eval();
             _time++;
 

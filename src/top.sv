@@ -4,6 +4,7 @@
 module top (
     input  wire logic clk_100m,
     input  wire logic btn_rst_n,
+    input  wire logic [2:0] sw,
     output      logic vga_hsync,
     output      logic vga_vsync,
     output      logic [3:0] vga_r,
@@ -171,26 +172,44 @@ module top (
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
 
-    logic [7:0]  angle_idx;
-    q16_16_t sin_val, cos_val;
 
-    always_ff @(posedge clk_render or posedge rst_render) begin
-        if (rst_render)
-            angle_idx <= 8'd0;
-        else if (begin_frame)
-            angle_idx <= angle_idx + 8'd1;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] sw_s1;
+    (* ASYNC_REG = "TRUE" *) logic [2:0] sw_s2;
+
+    always_ff @(posedge clk_render) begin
+        sw_s1 <= sw;
+        sw_s2 <= sw_s1;
     end
 
-    sincos_feeder #(
-        .N_ANGLES(256),
-        .MEMFILE("sincos.mem")
-    ) sincos_inst (
-        .clk        (clk_render),
-        .rst        (rst_render),
-        .angle_idx  (angle_idx),
-        .out_sin    (sin_val),
-        .out_cos    (cos_val)
-    );
+    wire sw_x_en = sw_s2[0]; // rotate X when high
+    wire sw_y_en = sw_s2[1]; // rotate Y when high
+    wire sw_z_en = sw_s2[2]; // rotate Z when high
+
+
+    localparam int N_ANGLES = 256;
+    logic [$clog2(N_ANGLES)-1:0] ang_x, ang_y, ang_z;
+
+    always_ff @(posedge clk_render or posedge rst_render) begin
+        if (rst_render) begin
+            ang_x <= '0; ang_y <= '0; ang_z <= '0;
+        end else if (frame_start_render) begin
+            if (sw_x_en) ang_x <= ang_x + 1'b1;
+            if (sw_y_en) ang_y <= ang_y + 1'b1;
+            if (sw_z_en) ang_z <= ang_z + 1'b1;
+        end
+    end
+q16_16_t sin_x, cos_x, sin_y, cos_y, sin_z, cos_z;
+
+sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_x (
+    .clk(clk_render), .rst(rst_render), .angle_idx(ang_x), .out_sin(sin_x), .out_cos(cos_x)
+);
+sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_y (
+    .clk(clk_render), .rst(rst_render), .angle_idx(ang_y), .out_sin(sin_y), .out_cos(cos_y)
+);
+sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
+    .clk(clk_render), .rst(rst_render), .angle_idx(ang_z), .out_sin(sin_z), .out_cos(cos_z)
+);
+
 
     localparam color12_t CLEAR_COLOR = 12'h223;
     localparam int       FOCAL_LENGTH  = 256;
@@ -213,8 +232,8 @@ module top (
     // assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
     // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
     assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
-    assign transform.rot_sin            = '{x:32'h0000_8000, y:sin_val, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
-    assign transform.rot_cos            = '{x:32'h0000_DDB4, y:cos_val, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1)
+assign transform.rot_sin = '{x:sin_x, y:sin_y, z:sin_z};
+assign transform.rot_cos = '{x:cos_x, y:cos_y, z:cos_z};
     assign transform.scale              = '{x:32'h0000_6666, y:32'h0000_6666, z:32'h0000_6666}; // scale = (0.4, 0.4, 0.4)
 
 
