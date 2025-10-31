@@ -3,7 +3,7 @@
 import vertex_pkg::*;
 import math_pkg::*;
 
-module triangle_projector(
+module triangle_projector_v2(
     input  logic clk,
     input  logic rst,
 
