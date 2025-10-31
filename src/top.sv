@@ -105,27 +105,29 @@ module top (
     logic feeder_valid, feeder_busy;
 
     q16_16_t offset_x, offset_y;
-    always_ff @(posedge clk_render or posedge rst_render) begin
-        if (rst_render)
-            offset_x <= -($signed(FB_WIDTH) <<< 15);
-        else if (begin_frame) begin
-            if (offset_x >= ($signed(FB_WIDTH) <<< 15))
-                offset_x <= -($signed(FB_WIDTH) <<< 15);
-            else
-                offset_x <= offset_x + (32'sd1 <<< 15);
-        end
-    end
+    assign offset_x = 32'sd0;
+    assign offset_y = 32'sd0;
+    // always_ff @(posedge clk_render or posedge rst_render) begin
+    //     if (rst_render)
+    //         offset_x <= -($signed(FB_WIDTH) <<< 15);
+    //     else if (begin_frame) begin
+    //         if (offset_x >= ($signed(FB_WIDTH) <<< 15))
+    //             offset_x <= -($signed(FB_WIDTH) <<< 15);
+    //         else
+    //             offset_x <= offset_x + (32'sd1 <<< 15);
+    //     end
+    // end
 
-    always_ff @(posedge clk_render or posedge rst_render) begin
-        if (rst_render)
-            offset_y <= 11'd0;
-        else if (begin_frame) begin
-            if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
-                offset_y <= 11'd0;
-            else
-                offset_y <= offset_y + (32'sd1 <<< 13);
-        end
-    end
+    // always_ff @(posedge clk_render or posedge rst_render) begin
+    //     if (rst_render)
+    //         offset_y <= 11'd0;
+    //     else if (begin_frame) begin
+    //         if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
+    //             offset_y <= 11'd0;
+    //         else
+    //             offset_y <= offset_y + (32'sd1 <<< 13);
+    //     end
+    // end
 
     // ---------- Camera-first sequencing ----------
     // 1) Generate a one-cycle camera pulse at frame start
