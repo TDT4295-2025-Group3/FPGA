@@ -3,15 +3,15 @@
 import vertex_pkg::*;
 import math_pkg::*;
 
-module triangle_projector(
+module triangle_projector#(
+    parameter int FOCAL_LENGTH = 256
+) (
     input  logic clk,
     input  logic rst,
 
     input  triangle_t triangle,
     input  logic      in_valid,
     output logic      in_ready,
-
-    input  q16_16_t   focal_length,
 
     output triangle_t out_triangle,
     output logic      out_valid,
@@ -30,40 +30,46 @@ module triangle_projector(
     logic v0_valid;
     logic v1_valid;
     logic v2_valid;
+
+    // Handshake helper signals (local to this module)
+    wire all_valid   = v0_valid && v1_valid && v2_valid;
+    wire tp_out_ready = out_ready && all_valid;
     
-    vertex_projector
-        project_v0 (
+    vertex_projector #(
+        .FOCAL_LENGTH(FOCAL_LENGTH)
+    ) project_v0 (
         .clk(clk),
         .rst(rst),
         
         .vertex(triangle.v0),
         .in_valid(in_valid),
         .in_ready(v0_ready),
-        .focal_length(focal_length),
         
         .out_vertex(out_triangle.v0),
         .out_valid(v0_valid),
-        .out_ready(out_ready),
+        .out_ready(tp_out_ready),
         .busy(v0_busy)
     );
-    
-    vertex_projector
-        project_v1 (
+
+    vertex_projector #(
+        .FOCAL_LENGTH(FOCAL_LENGTH)
+    ) project_v1 (
         .clk(clk),
         .rst(rst),
         
         .vertex(triangle.v1),
         .in_valid(in_valid),
         .in_ready(v1_ready),
-        .focal_length(focal_length),
         
         .out_vertex(out_triangle.v1),
         .out_valid(v1_valid),
-        .out_ready(out_ready),
+        .out_ready(tp_out_ready),
         .busy(v1_busy)
     );
     
-    vertex_projector
+    vertex_projector #(
+        .FOCAL_LENGTH(FOCAL_LENGTH)
+    )
         project_v2 (
         .clk(clk),
         .rst(rst),
@@ -71,18 +77,14 @@ module triangle_projector(
         .vertex(triangle.v2),
         .in_valid(in_valid),
         .in_ready(v2_ready),
-        .focal_length(focal_length),
         
         .out_vertex(out_triangle.v2),
         .out_valid(v2_valid),
-        .out_ready(out_ready),
+        .out_ready(tp_out_ready),
         .busy(v2_busy)
     );
     
-    assign busy = v0_busy || v1_busy || v2_busy;
-    assign in_ready = !busy && out_ready;
-    assign out_valid = v0_valid && v1_valid && v2_valid;
-    
-    
-
+    assign busy     = v0_busy || v1_busy || v2_busy;
+    assign in_ready = v0_ready && v1_ready && v2_ready;
+    assign out_valid = all_valid;
 endmodule

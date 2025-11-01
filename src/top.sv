@@ -154,7 +154,7 @@ module top (
     // --------------------------------------------
 
     triangle_feeder #(
-        .N_TRIS(430),
+        .N_TRIS(132),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
@@ -191,7 +191,9 @@ module top (
 
     always_ff @(posedge clk_render or posedge rst_render) begin
         if (rst_render) begin
-            ang_x <= '0; ang_y <= '0; ang_z <= '0;
+            ang_x <= 8'd10;
+            ang_y <= 8'd0;
+            ang_z <= 8'd0;
         end else if (frame_start_render) begin
             if (sw_x_en) ang_x <= ang_x + 1'b1;
             if (sw_y_en) ang_y <= ang_y + 1'b1;
@@ -212,7 +214,7 @@ sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
 
 
     localparam color12_t CLEAR_COLOR = 12'h223;
-    localparam int       FOCAL_LENGTH  = 256;
+    localparam int       FOCAL_LENGTH  = 1000;
 
     transform_t camera_transform;
     transform_t transform;
@@ -231,10 +233,10 @@ sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
     // assign transform.rot_sin            = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0, 0, 0)
     // assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
     // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
-    assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
+    assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFE0_0000}; // pos = (0, 0, -16)
 assign transform.rot_sin = '{x:sin_x, y:sin_y, z:sin_z};
 assign transform.rot_cos = '{x:cos_x, y:cos_y, z:cos_z};
-    assign transform.scale              = '{x:32'h0000_6666, y:32'h0000_6666, z:32'h0000_6666}; // scale = (0.4, 0.4, 0.4)
+    assign transform.scale              = '{x:32'h0000_0666, y:32'h0000_0666, z:32'h0000_0666}; // scale = (0.4, 0.4, 0.4)
 
 
     // Fill transform_setup bus: camera first (one cycle), then triangles with model transform
