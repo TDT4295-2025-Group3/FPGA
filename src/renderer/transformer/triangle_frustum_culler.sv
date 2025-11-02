@@ -34,11 +34,10 @@ module triangle_frustum_culler #(
     function automatic logic vertex_in_frustum(input vertex_t v);
         begin
             vertex_in_frustum =
-                (-v.pos.z >= NEAR_PLANE_Q16_16) &&
-                (-v.pos.z <= FAR_PLANE_Q16_16)  &&
+                (v.pos.z >= NEAR_PLANE_Q16_16) &&
+                (v.pos.z <= FAR_PLANE_Q16_16)  &&
                 (v.pos.x >= 0) && (v.pos.x <= WIDTH_Q16_16) &&
                 (v.pos.y >= 0) && (v.pos.y <= HEIGHT_Q16_16);
-                $display ("Z: %d, X: %d, Y: %d => in_frustum: %b", v.pos.z, v.pos.x, v.pos.y, vertex_in_frustum);
         end
     endfunction
 
@@ -56,6 +55,14 @@ module triangle_frustum_culler #(
 
     assign in_ready     = !valid_reg || out_ready;
     assign out_valid    = valid_reg && triangle_in_frustum(triangle_reg);
+    always_comb begin
+        if (out_valid && !triangle_in_frustum(triangle_reg)) begin
+            $display("Culled triangle: v0=(%0d,%0d,%0d)  v1=(%0d,%0d,%0d)  v2=(%0d,%0d,%0d)",
+                triangle_reg.v0.pos.x, triangle_reg.v0.pos.y, triangle_reg.v0.pos.z,
+                triangle_reg.v1.pos.x, triangle_reg.v1.pos.y, triangle_reg.v1.pos.z,
+                triangle_reg.v2.pos.x, triangle_reg.v2.pos.y, triangle_reg.v2.pos.z);
+            end
+    end
     assign out_triangle = triangle_reg;
     assign busy         = valid_reg;
 
