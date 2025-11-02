@@ -154,7 +154,7 @@ module top (
     // --------------------------------------------
 
     triangle_feeder #(
-        .N_TRIS(132),
+        .N_TRIS(698),
         .MEMFILE("tris.mem")
     ) feeder_inst (
         .clk        (clk_render),
@@ -214,7 +214,7 @@ sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
 
 
     localparam color12_t CLEAR_COLOR = 12'h223;
-    localparam int       FOCAL_LENGTH  = 1000;
+    localparam int       FOCAL_LENGTH  = 256;
 
     transform_t camera_transform;
     transform_t transform;
@@ -232,11 +232,12 @@ sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
     // assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
     // assign transform.rot_sin            = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0, 0, 0)
     // assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
-    // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
     assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFE0_0000}; // pos = (0, 0, -16)
 assign transform.rot_sin = '{x:sin_x, y:sin_y, z:sin_z};
 assign transform.rot_cos = '{x:cos_x, y:cos_y, z:cos_z};
-    assign transform.scale              = '{x:32'h0000_0666, y:32'h0000_0666, z:32'h0000_0666}; // scale = (0.4, 0.4, 0.4)
+    assign transform.scale              = '{x:32'h0000_1000, y:32'h0000_1000, z:32'h0000_1000}; // scale = (0.0625, 0.0625, 0.0625)
+    // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
+
 
 
     // Fill transform_setup bus: camera first (one cycle), then triangles with model transform

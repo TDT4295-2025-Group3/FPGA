@@ -34,11 +34,13 @@ module screen_normalizer #(
         begin
             vout = vin;
 
-            tmp   = q32_32_t'(vin.pos.x) * q32_32_t'(SCALE_FACTOR_Q16_16);
+            tmp   = q32_32_t'(-vin.pos.x) * q32_32_t'(SCALE_FACTOR_Q16_16);
             vout.pos.x = q16_16_t'(((tmp + q32_32_t'(1<<15)) >>> 16)) + q16_16_t'(HALF_WIDTH  << 16);
 
-            tmp   = q32_32_t'(-vin.pos.y) * q32_32_t'(SCALE_FACTOR_Q16_16);
+            tmp   = q32_32_t'(vin.pos.y) * q32_32_t'(SCALE_FACTOR_Q16_16);
             vout.pos.y = q16_16_t'(((tmp + q32_32_t'(1<<15)) >>> 16)) + q16_16_t'(HALF_HEIGHT << 16);
+
+            vout.pos.z = -vin.pos.z;
             return vout;
         end
     endfunction
