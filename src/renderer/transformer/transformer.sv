@@ -100,6 +100,27 @@ module transformer #(
         .busy        (sn_busy)
     );
 
+    triangle_t tfc_out_triangle;
+    logic       tfc_out_valid, tfc_out_ready, tfc_busy;
+    triangle_frustum_culler #(
+        .WIDTH  (WIDTH),
+        .HEIGHT (HEIGHT),
+        .NEAR_PLANE(1),
+        .FAR_PLANE(10000)
+    ) u_triangle_frustum_culler (
+        .clk          (clk),
+        .rst          (rst),
+
+        .triangle     (sn_out_triangle),
+        .in_valid     (sn_out_valid),
+        .in_ready     (sn_out_ready),
+
+        .out_triangle (tfc_out_triangle),
+        .out_valid    (tfc_out_valid),
+        .out_ready    (tfc_out_ready),
+        .busy         (tfc_busy)
+    );
+
     function real q2r(input q16_16_t q); q2r = $itor(q) / 65536.0; endfunction
 
     task automatic print_tri(input string tag, input triangle_t t);
@@ -152,10 +173,11 @@ module transformer #(
     //     end
     // end
 
-    assign out_triangle = sn_out_triangle;
-    assign out_valid    = sn_out_valid;
-    assign sn_out_ready = out_ready;
+    assign out_triangle = tfc_out_triangle;
+    assign out_valid    = tfc_out_valid;
+    assign tfc_out_ready = out_ready;
+    assign sn_out_ready  = tfc_out_ready;
 
-    assign busy = ts_busy | mw_busy | tp_busy | sn_busy;
+    assign busy = ts_busy | mw_busy | tp_busy | sn_busy | tfc_busy;
 
 endmodule
