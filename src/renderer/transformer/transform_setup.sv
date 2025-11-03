@@ -53,17 +53,39 @@ module transform_setup (
     end
 
     // Compute rotation matrix
+    q16_16_t c_cz_sy, c_sz_sy;
+    q16_16_t c_sz_sx, c_sz_cx;
+    q16_16_t c_cz_sx, c_cz_cx;
+    q16_16_t c_cz_cy, c_sz_cy;
+    q16_16_t c_cy_sx, c_cy_cx;
     always_comb begin
-        R11 = mul_matrix_coefficient(cz, cy);
-        R12 = mul_matrix_coefficient(mul_transform(cz, sy), sx) - mul_transform(sz, cx);
-        R13 = mul_matrix_coefficient(mul_matrix_coefficient(cz, sy), cx) + mul_matrix_coefficient(sz, sx);
-        R21 = mul_matrix_coefficient(sz, cy);
-        R22 = mul_matrix_coefficient(mul_matrix_coefficient(sz, sy), sx) + mul_matrix_coefficient(cz, cx);
-        R23 = mul_matrix_coefficient(mul_matrix_coefficient(sz, sy), cx) - mul_matrix_coefficient(cz, sx);
+        c_cz_cy = mul_matrix_coefficient(cz, cy);
+        c_sz_cy = mul_matrix_coefficient(sz, cy);
+
+        c_cy_sx = mul_matrix_coefficient(cy, sx);
+        c_cy_cx = mul_matrix_coefficient(cy, cx);
+
+        c_cz_sy = mul_matrix_coefficient(cz, sy);
+        c_sz_sy = mul_matrix_coefficient(sz, sy);
+
+        c_sz_sx = mul_matrix_coefficient(sz, sx);
+        c_sz_cx = mul_matrix_coefficient(sz, cx);
+        c_cz_sx = mul_matrix_coefficient(cz, sx);
+        c_cz_cx = mul_matrix_coefficient(cz, cx);
+        
+        R11 = c_cz_cy;
+        R21 = c_sz_cy;
         R31 = -sy;
-        R32 = mul_matrix_coefficient(cy, sx);
-        R33 = mul_matrix_coefficient(cy, cx);
+        R32 = c_cy_sx;
+        R33 = c_cy_cx;
+
+        R12 = mul_matrix_coefficient(c_cz_sy, sx) - c_sz_cx;
+        R13 = mul_matrix_coefficient(c_cz_sy, cx) + c_sz_sx;
+
+        R22 = mul_matrix_coefficient(c_sz_sy, sx) + c_cz_cx;
+        R23 = mul_matrix_coefficient(c_sz_sy, cx) - c_cz_sx;
     end
+
 
     assign in_ready = (state == IDLE);
     assign busy     = (state != IDLE);
