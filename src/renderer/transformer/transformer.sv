@@ -176,7 +176,7 @@ module transformer #(
     assign out_triangle = tfc_out_triangle;
     assign out_valid    = tfc_out_valid;
     assign tfc_out_ready = out_ready;
-    assign sn_out_ready  = tfc_out_ready;
+    // assign sn_out_ready  = tfc_out_ready;
 
     assign busy = ts_busy | mw_busy | tp_busy | sn_busy | tfc_busy;
 

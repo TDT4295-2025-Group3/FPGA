@@ -52,17 +52,11 @@ module triangle_frustum_culler #(
 
     triangle_t triangle_reg;
     logic       valid_reg;
+    logic tri_in_frustum;
+    assign tri_in_frustum = triangle_in_frustum(triangle_reg);
 
     assign in_ready     = !valid_reg || out_ready;
-    assign out_valid    = valid_reg && triangle_in_frustum(triangle_reg);
-    always_comb begin
-        if (out_valid && !triangle_in_frustum(triangle_reg)) begin
-            $display("Culled triangle: v0=(%0d,%0d,%0d)  v1=(%0d,%0d,%0d)  v2=(%0d,%0d,%0d)",
-                triangle_reg.v0.pos.x, triangle_reg.v0.pos.y, triangle_reg.v0.pos.z,
-                triangle_reg.v1.pos.x, triangle_reg.v1.pos.y, triangle_reg.v1.pos.z,
-                triangle_reg.v2.pos.x, triangle_reg.v2.pos.y, triangle_reg.v2.pos.z);
-            end
-    end
+    assign out_valid    = valid_reg && tri_in_frustum;
     assign out_triangle = triangle_reg;
     assign busy         = valid_reg;
 
