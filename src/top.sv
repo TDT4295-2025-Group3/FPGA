@@ -167,6 +167,7 @@ module top (
         .busy       (feeder_busy),
         .out_tri    (feeder_tri)
     );
+    
 
     // ----------------------------------------------------------------
     // Render manager (clear + triangles)
@@ -240,11 +241,22 @@ assign transform.rot_cos = '{x:cos_x, y:cos_y, z:cos_z};
 
 
 
-    // Fill transform_setup bus: camera first (one cycle), then triangles with model transform
+    // Track first triangle of each frame (for camera setup)
+    logic first_tri_this_frame;
+    always_ff @(posedge clk_render or posedge rst_render) begin
+        if (rst_render)
+            first_tri_this_frame <= 1'b1;
+        else if (begin_frame)
+            first_tri_this_frame <= 1'b1;            // new frame: next triangle is camera packet
+        else if (feeder_valid && renderer_ready)
+            first_tri_this_frame <= 1'b0;            // after first tri handshake, only model packets
+    end
+
+    // Fill transform_setup bus: camera first (first triangle), then triangles with model transform
     assign transform_setup.triangle                 = feeder_tri;
     assign transform_setup.model_transform          = transform;
-    assign transform_setup.model_transform_valid    = feeder_valid;  // valid with each triangle
-    assign transform_setup.camera_transform_valid   = cam_pulse;     // 1 cycle at frame start
+    assign transform_setup.model_transform_valid    = feeder_valid && !first_tri_this_frame;  // all but first triangle
+    assign transform_setup.camera_transform_valid   = feeder_valid &&  first_tri_this_frame;  // first triangle per frame
     assign transform_setup.camera_transform         = camera_transform;
 
     render_manager #(
