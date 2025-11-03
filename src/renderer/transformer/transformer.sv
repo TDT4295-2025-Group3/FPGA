@@ -60,6 +60,24 @@ module transformer #(
         .busy            (mw_busy)
     );
 
+    triangle_t wc_out_triangle;
+    logic      wc_out_valid, wc_out_ready, wc_busy;
+
+    world_camera_transformer u_world_camera_transformer (
+        .clk         (clk),
+        .rst         (rst),
+
+        .world_camera(mw_out_world_camera),
+        .in_valid    (mw_out_valid),
+        .in_ready    (mw_out_ready),
+
+        .out_triangle(wc_out_triangle),
+        .out_valid   (wc_out_valid),
+        .out_ready   (wc_out_ready),
+
+        .busy        (wc_busy)
+    );
+
     triangle_t  tp_out_triangle;
     logic       tp_out_valid, tp_out_ready, tp_busy;
     triangle_projector #(
@@ -68,9 +86,9 @@ module transformer #(
         .clk          (clk),
         .rst          (rst),
 
-        .triangle     (mw_out_world_camera.triangle),
-        .in_valid     (mw_out_valid),
-        .in_ready     (mw_out_ready),
+        .triangle     (wc_out_triangle),
+        .in_valid     (wc_out_valid),
+        .in_ready     (wc_out_ready),
 
 
         .out_triangle (tp_out_triangle),
@@ -176,6 +194,6 @@ module transformer #(
     assign out_valid    = tfc_out_valid;
     assign tfc_out_ready = out_ready;
 
-    assign busy = ts_busy | mw_busy | tp_busy | sn_busy | tfc_busy;
+    assign busy = ts_busy | mw_busy | wc_busy | tp_busy | sn_busy | tfc_busy;
 
 endmodule

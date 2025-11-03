@@ -4,7 +4,7 @@
 module top (
     input  wire logic clk_100m,
     input  wire logic btn_rst_n,
-    input  wire logic [2:0] sw,
+    input  wire logic [3:0] sw,
     output      logic vga_hsync,
     output      logic vga_vsync,
     output      logic [3:0] vga_r,
@@ -174,45 +174,66 @@ module top (
     // ----------------------------------------------------------------
 
 
-    (* ASYNC_REG = "TRUE" *) logic [2:0] sw_s1;
-    (* ASYNC_REG = "TRUE" *) logic [2:0] sw_s2;
+    (* ASYNC_REG = "TRUE" *) logic [3:0] sw_s1;
+    (* ASYNC_REG = "TRUE" *) logic [3:0] sw_s2;
 
     always_ff @(posedge clk_render) begin
         sw_s1 <= sw;
         sw_s2 <= sw_s1;
     end
 
-    wire sw_x_en = sw_s2[0]; // rotate X when high
-    wire sw_y_en = sw_s2[1]; // rotate Y when high
-    wire sw_z_en = sw_s2[2]; // rotate Z when high
-
+    wire sw_x_en   = sw_s2[0]; // rotate X when high
+    wire sw_y_en   = sw_s2[1]; // rotate Y when high
+    wire sw_z_en   = sw_s2[2]; // rotate Z when high
+    wire sw_cam_en = sw_s2[3];
 
     localparam int N_ANGLES = 256;
     logic [$clog2(N_ANGLES)-1:0] ang_x, ang_y, ang_z;
+    logic [$clog2(N_ANGLES)-1:0] ang_cam_x, ang_cam_y, ang_cam_z;
 
     always_ff @(posedge clk_render or posedge rst_render) begin
         if (rst_render) begin
-            ang_x <= 8'd10;
-            ang_y <= 8'd0;
-            ang_z <= 8'd0;
+            ang_x     <= 8'd10;
+            ang_y     <= 8'd0;
+            ang_z     <= 8'd0;
+            ang_cam_x <= 8'd0;
+            ang_cam_y <= 8'd0;
+            ang_cam_z <= 8'd0;
         end else if (frame_start_render) begin
-            if (sw_x_en) ang_x <= ang_x + 1'b1;
-            if (sw_y_en) ang_y <= ang_y + 1'b1;
-            if (sw_z_en) ang_z <= ang_z + 1'b1;
+            if (!sw_cam_en) begin
+                if (sw_x_en) ang_x <= ang_x + 1'b1;
+                if (sw_y_en) ang_y <= ang_y + 1'b1;
+                if (sw_z_en) ang_z <= ang_z + 1'b1;
+            end else begin
+                if (sw_x_en) ang_cam_x <= ang_cam_x + 1'b1;
+                if (sw_y_en) ang_cam_y <= ang_cam_y + 1'b1;
+                if (sw_z_en) ang_cam_z <= ang_cam_z + 1'b1;
+            end
         end
     end
-q16_16_t sin_x, cos_x, sin_y, cos_y, sin_z, cos_z;
 
-sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_x (
-    .clk(clk_render), .rst(rst_render), .angle_idx(ang_x), .out_sin(sin_x), .out_cos(cos_x)
-);
-sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_y (
-    .clk(clk_render), .rst(rst_render), .angle_idx(ang_y), .out_sin(sin_y), .out_cos(cos_y)
-);
-sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
-    .clk(clk_render), .rst(rst_render), .angle_idx(ang_z), .out_sin(sin_z), .out_cos(cos_z)
-);
+    q16_16_t sin_x, cos_x, sin_y, cos_y, sin_z, cos_z;
+    q16_16_t sin_cam_x, cos_cam_x, sin_cam_y, cos_cam_y, sin_cam_z, cos_cam_z;
 
+    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_x (
+        .clk(clk_render), .rst(rst_render), .angle_idx(ang_x), .out_sin(sin_x), .out_cos(cos_x)
+    );
+    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_y (
+        .clk(clk_render), .rst(rst_render), .angle_idx(ang_y), .out_sin(sin_y), .out_cos(cos_y)
+    );
+    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
+        .clk(clk_render), .rst(rst_render), .angle_idx(ang_z), .out_sin(sin_z), .out_cos(cos_z)
+    );
+
+    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_cam_x (
+        .clk(clk_render), .rst(rst_render), .angle_idx(ang_cam_x), .out_sin(sin_cam_x), .out_cos(cos_cam_x)
+    );
+    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_cam_y (
+        .clk(clk_render), .rst(rst_render), .angle_idx(ang_cam_y), .out_sin(sin_cam_y), .out_cos(cos_cam_y)
+    );
+    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_cam_z (
+        .clk(clk_render), .rst(rst_render), .angle_idx(ang_cam_z), .out_sin(sin_cam_z), .out_cos(cos_cam_z)
+    );
 
     localparam color12_t CLEAR_COLOR = 12'h223;
     localparam int       FOCAL_LENGTH  = 256;
@@ -222,8 +243,12 @@ sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
     transform_setup_t transform_setup;
 
     assign camera_transform.pos         = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
-    assign camera_transform.rot_sin     = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
-    assign camera_transform.rot_cos     = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
+    assign camera_transform.rot_sin     = sw_cam_en ?
+                                          '{x:sin_cam_x, y:sin_cam_y, z:sin_cam_z} :
+                                          '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
+    assign camera_transform.rot_cos     = sw_cam_en ?
+                                          '{x:cos_cam_x, y:cos_cam_y, z:cos_cam_z} :
+                                          '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
     assign camera_transform.scale       = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
 
     // assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
@@ -234,8 +259,12 @@ sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
     // assign transform.rot_sin            = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0, 0, 0)
     // assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
     assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0100_0000}; // pos = (0, 0, 16)
-assign transform.rot_sin = '{x:sin_x, y:sin_y, z:sin_z};
-assign transform.rot_cos = '{x:cos_x, y:cos_y, z:cos_z};
+    assign transform.rot_sin            = sw_cam_en ?
+                                          '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000} :
+                                          '{x:sin_x, y:sin_y, z:sin_z};
+    assign transform.rot_cos            = sw_cam_en ?
+                                          '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000} :
+                                          '{x:cos_x, y:cos_y, z:cos_z};
     assign transform.scale              = '{x:32'h0000_4000, y:32'h0000_4000, z:32'h0000_4000}; // scale = (1, 1, 1)
     // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
 

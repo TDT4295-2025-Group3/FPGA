@@ -1,124 +1,185 @@
 `timescale 1ns / 1ps
-`default_nettype wire
+`default_nettype none
 import math_pkg::*;
 import vertex_pkg::*;
 import transformer_pkg::*;
 
-// p_cam = R^T * (p_world - C), scale is ignored (camera scale = 1)
 module world_camera_transformer(
-    input  clk,
-    input  rst,
- 
-    input  triangle_t  triangle,      // world-space triangle
-    input  logic       in_valid,
-    output logic       in_ready,
+    input  wire logic        clk,
+    input  wire logic        rst,
 
-    output triangle_t  out_triangle,  // camera-space triangle
-    output logic       out_valid,
-    input  logic       out_ready,
-    output logic       busy,
-    
-    // import Rotation matrix from model to world transformer
-    input  q16_16_t R11, R12, R13,
-    input  q16_16_t R21, R22, R23,
-    input  q16_16_t R31, R32, R33,
-    input q16_16_t cam_x, cam_y, cam_z
+    input  wire world_camera_t world_camera,
+    input  wire logic          in_valid,
+    output      logic          in_ready,
+
+    output      triangle_t     out_triangle,
+    output      logic          out_valid,
+    input  wire logic          out_ready,
+
+    output      logic          busy
 );
-    // pipeline registers
-    vertex_t load_v, temp_v, cam_v, compute_v;
-    triangle_t out_triangle_r;
-    logic [1:0] load_vert_ctr;
-    logic [1:0] vert_ctr_out;    // which vertex is being written out
-    logic [2:0] valid_pipe;      // shift register for pipeline stages 
-    logic       load_vert;
-    logic       pipe_en;
-    logic       triangle_ready;
-    logic       triangle_ready_d;
-    logic       out_valid_r;
 
-    assign busy = |valid_pipe || out_valid_r;  // busy if any stage is active
-    assign pipe_en  = out_ready || !valid_pipe[2]; 
-    assign in_ready = pipe_en;
-    assign triangle_ready = valid_pipe[2] && (vert_ctr_out == 2);
-    // Using a pipeline to maxemise thoughput with valid_pipe controll signal
-    // Load vertex
-    always_ff @(posedge clk) begin
+    typedef struct packed {
+        vertex_t    vertex;
+        logic [1:0] idx;
+        logic       valid;
+    } vertex_stage_t;
+
+    typedef enum logic [1:0] {IDLE, PROCESS, DONE} state_t;
+    state_t state;
+
+    // Latched transaction
+    world_camera_t world_camera_in_r;
+    triangle_t     triangle_r;
+
+    // Vertex index being *issued* into the pipeline
+    logic [1:0] vertex_idx;
+    logic       last_vertex_done;
+
+    // FSM: drive per-triangle sequencing (3 vertices)
+    always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            vert_ctr_out  <= 0;
-            load_vert_ctr <= 0;
-            load_vert     <= 0;
-            out_valid_r   <= 0;
-            load_v        <= 0;
-            temp_v        <= 0;
-            cam_v         <= 0;
-            out_triangle  <= 0;
-            valid_pipe    <= 3'b000;
+            world_camera_in_r <= '0;
+            state             <= IDLE;
+            vertex_idx        <= 2'd0;
         end else begin
-            triangle_ready_d <= triangle_ready;
-            // Hold input 3 cycles
-            if(in_valid && in_ready && load_vert_ctr == 0) begin
-                load_vert_ctr <= load_vert_ctr +1;
-                load_vert <= 1;
-            end else if(load_vert && in_ready) begin
-                if(load_vert_ctr == 2) begin
-                    load_vert_ctr <= 0;
-                    load_vert <= 0; 
-                end else 
-                    load_vert_ctr <= load_vert_ctr +1;
-            end
-
-            // shift pipline state
-            if(pipe_en) begin
-                valid_pipe <= {valid_pipe[1:0], (in_valid || load_vert) && in_ready};
-                    
-                // load next vertex when input valid, stage -1
-                if ((in_valid || load_vert) && in_ready) begin
-                    unique case (load_vert_ctr)
-                        2'd0: load_v <= triangle.v0;
-                        2'd1: load_v <= triangle.v1;
-                        2'd2: load_v <= triangle.v2;
-                    endcase
-                end
-            
-                // Translation, stage 0
-                if (valid_pipe[0]) begin
-                    temp_v.pos.x <= load_v.pos.x - cam_x;
-                    temp_v.pos.y <= load_v.pos.y - cam_y;
-                    temp_v.pos.z <= load_v.pos.z - cam_z;
-                    temp_v.color <= load_v.color;
-                end 
-
-                // Rotation, stage 1
-                if (valid_pipe[1]) begin
-                    // Translate to world coordinates, stage 1
-                    cam_v.pos.x <= dot3_transform(R11, R21, R31, temp_v.pos.x, temp_v.pos.y, temp_v.pos.z);
-                    cam_v.pos.y <= dot3_transform(R12, R22, R32, temp_v.pos.x, temp_v.pos.y, temp_v.pos.z);
-                    cam_v.pos.z <= dot3_transform(R13, R23, R33, temp_v.pos.x, temp_v.pos.y, temp_v.pos.z);
-                    cam_v.color   <= temp_v.color;
+            unique case (state)
+                IDLE: begin
+                    if (in_valid && in_ready) begin
+                        world_camera_in_r <= world_camera;
+                        vertex_idx        <= 2'd0;
+                        state             <= PROCESS;
+                    end
                 end
 
-                // Output, stage 2
-                if (valid_pipe[2]) begin
-                    unique case (vert_ctr_out)
-                        2'd0: out_triangle_r.v0 <= cam_v;
-                        2'd1: out_triangle_r.v1 <= cam_v;
-                        2'd2: out_triangle_r.v2 <= cam_v;
-                    endcase
-                end                
-                if (vert_ctr_out == 2 && out_ready) begin
-                    vert_ctr_out <= 0;
-                end else if (valid_pipe[2] && vert_ctr_out < 2) begin
-                    vert_ctr_out <= vert_ctr_out +1;
+                PROCESS: begin
+                    // Issue next vertex while there are any left (0,1,2)
+                    if (vertex_idx != 2'd3) begin
+                        vertex_idx <= vertex_idx + 2'd1;
+                    end
+                    // Go DONE once last vertex has passed through the pipeline
+                    if (last_vertex_done) begin
+                        state <= DONE;
+                    end
                 end
-            end 
-            
-            if (triangle_ready_d && !out_valid_r) begin
-                out_valid_r <= 1; // triangle assembled this cycle
-                out_triangle <= out_triangle_r;
-            end else if (out_ready && out_valid_r) begin
-                out_valid_r <= 0;
-            end
+
+                DONE: begin
+                    // Wait for downstream to accept the triangle
+                    if (out_ready && out_valid) begin
+                        state <= IDLE;
+                    end
+                end
+
+                default: state <= IDLE;
+            endcase
         end
     end
-    assign out_valid = out_valid_r;
+
+    // Select current vertex based on vertex_idx
+    vertex_stage_t current_vertex;
+    always_comb begin
+        current_vertex = '0;
+        if (state == PROCESS && (vertex_idx != 2'd3)) begin
+            unique case (vertex_idx)
+                2'd0: current_vertex.vertex = world_camera_in_r.triangle.v0;
+                2'd1: current_vertex.vertex = world_camera_in_r.triangle.v1;
+                2'd2: current_vertex.vertex = world_camera_in_r.triangle.v2;
+                default: current_vertex.vertex = '0;
+            endcase
+            current_vertex.idx   = vertex_idx;
+            current_vertex.valid = 1'b1;
+        end
+    end
+
+    // Two-stage pipeline: translate -> rotate (R^T)
+    vertex_stage_t translated_vertex, rotated_vertex;
+    vertex_stage_t translated_vertex_d, rotated_vertex_d;
+    triangle_t     triangle_r_d;
+
+    always_comb begin
+        translated_vertex_d = '0;
+        rotated_vertex_d    = '0;
+        triangle_r_d        = triangle_r; // hold by default
+
+        // Clear accumulator on new transaction
+        if (state == IDLE && in_valid && in_ready) begin
+            triangle_r_d = '0;
+        end
+
+        // Stage 0: translate into camera-centered coordinates (p_world - C)
+        if (current_vertex.valid) begin
+            translated_vertex_d.vertex.pos.x =
+                current_vertex.vertex.pos.x - world_camera_in_r.camera.pos.x;
+            translated_vertex_d.vertex.pos.y =
+                current_vertex.vertex.pos.y - world_camera_in_r.camera.pos.y;
+            translated_vertex_d.vertex.pos.z =
+                current_vertex.vertex.pos.z - world_camera_in_r.camera.pos.z;
+
+            translated_vertex_d.vertex.color = current_vertex.vertex.color;
+            translated_vertex_d.idx          = current_vertex.idx;
+            translated_vertex_d.valid        = 1'b1;
+        end
+
+        // Stage 1: rotate by R^T (camera rotation inverse)
+        if (translated_vertex.valid) begin
+            matrix_t R = world_camera_in_r.camera.rot_mtx;
+
+            // R^T rows are the columns of R
+            rotated_vertex_d.vertex.pos.x = dot3_transform(
+                R.R11, R.R21, R.R31,
+                translated_vertex.vertex.pos.x,
+                translated_vertex.vertex.pos.y,
+                translated_vertex.vertex.pos.z
+            );
+            rotated_vertex_d.vertex.pos.y = dot3_transform(
+                R.R12, R.R22, R.R32,
+                translated_vertex.vertex.pos.x,
+                translated_vertex.vertex.pos.y,
+                translated_vertex.vertex.pos.z
+            );
+            rotated_vertex_d.vertex.pos.z = dot3_transform(
+                R.R13, R.R23, R.R33,
+                translated_vertex.vertex.pos.x,
+                translated_vertex.vertex.pos.y,
+                translated_vertex.vertex.pos.z
+            );
+
+            rotated_vertex_d.vertex.color = translated_vertex.vertex.color;
+            rotated_vertex_d.idx          = translated_vertex.idx;
+            rotated_vertex_d.valid        = 1'b1;
+        end
+
+        // Accumulate rotated vertices into triangle_r_d
+        if (rotated_vertex.valid) begin
+            unique case (rotated_vertex.idx)
+                2'd0: triangle_r_d.v0 = rotated_vertex.vertex;
+                2'd1: triangle_r_d.v1 = rotated_vertex.vertex;
+                2'd2: triangle_r_d.v2 = rotated_vertex.vertex;
+                default: ;
+            endcase
+        end
+    end
+
+    // Pipeline registers
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            translated_vertex <= '0;
+            rotated_vertex    <= '0;
+            triangle_r        <= '0;
+        end else begin
+            translated_vertex <= translated_vertex_d;
+            rotated_vertex    <= rotated_vertex_d;
+            triangle_r        <= triangle_r_d;
+        end
+    end
+
+    // Last vertex has completed rotation stage
+    assign last_vertex_done = rotated_vertex.valid && (rotated_vertex.idx == 2'd2);
+
+    // Handshake + outputs
+    assign out_triangle = triangle_r;
+    assign in_ready     = (state == IDLE);
+    assign out_valid    = (state == DONE);
+    assign busy         = (state != IDLE);
+
 endmodule

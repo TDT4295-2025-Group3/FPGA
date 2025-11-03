@@ -8,6 +8,7 @@ src/inv.sv
 
 src/renderer/transformer/transform_setup.sv
 src/renderer/transformer/model_world_transformer.sv
+src/renderer/transformer/world_camera_transformer.sv
 src/renderer/transformer/vertex_projector.sv
 src/renderer/transformer/triangle_projector.sv
 src/renderer/transformer/screen_normalizer.sv
