@@ -16,6 +16,7 @@ module raster_mem #(
     parameter VIDX_W  = $clog2(MAX_VERT_CNT), 
     parameter TIDX_W  = $clog2(MAX_TRI_CNT),   
     parameter TRI_W   = 3*VIDX_W,
+    parameter ID_W    = 8,
     parameter DATA_W  = 32,
     parameter TRANS_W = DATA_W * 12,
     parameter INST_W  = DATA_W * 12 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
@@ -32,21 +33,21 @@ module raster_mem #(
     input  logic  vert_hdr_valid,
     input  logic  vert_valid,
     input  logic [VTX_W-1:0]  vert_in,
-    input  logic [VIDX_W-1:0] vert_id_in,
+    input  logic [ID_W-1:0] vert_id_in,
     input  logic [$clog2(MAX_VERT)-1:0] vert_base,
     input  logic [VIDX_W-1:0] vert_count,
 
     input  logic  tri_hdr_valid,
     input  logic  tri_valid,
     input  logic [TRI_W-1:0] tri_in,
-    input  logic [TIDX_W-1:0] tri_id_in,
+    input  logic [ID_W-1:0]  tri_id_in,
     input  logic [$clog2(MAX_TRI)-1:0] tri_base,
     input  logic [TIDX_W-1:0] tri_count,
 
     // Instance management
     input  logic  inst_valid,
     input  logic [TRANS_W-1:0] transform_in,
-    input  logic [7:0]         inst_id_in,
+    input  logic [ID_W-1:0]         inst_id_in,
 
     // Frame driver access
     input  logic [$clog2(MAX_INST)-1:0] inst_id_rd,

@@ -13,9 +13,10 @@ module spi_driver #(
     parameter MAX_VERT_CNT = 4096,  // max vertices per buffer
     parameter MAX_TRI_CNT  = 4096,  // max triangles per buffer
     parameter VTX_W     = 108,      // 3*32 + 3*4 bits (spec)
-    parameter VIDX_W    = $clog2(MAX_VERT_CNT), 
-    parameter TIDX_W    = $clog2(MAX_TRI_CNT),   
-    parameter TRI_W     = 3*VIDX_W,           // 3*8 bits. Might want to increase for safety 3*12 bits
+    parameter VIDX_W    = $clog2(MAX_VERT_CNT), // this is also count_w
+    parameter TIDX_W    = $clog2(MAX_TRI_CNT),  // this is also count_w
+    parameter TRI_W     = 3*VIDX_W,           // 3*12 bits.
+    parameter ID_W      = 8,
     parameter DATA_W    = 32,
     parameter TRANS_W   = DATA_W * 12         // 9 floats: x,y,z,cos_x,sin_x,cos_y,sin_y,cos_z,sin_z,scale_x,scale_y,scale_z
     )(
@@ -44,20 +45,21 @@ module spi_driver #(
 
     // spi driver ↔ raster memory
     output logic  inst_valid, inst_id_valid,
-    output logic [VIDX_W-1:0]  vert_id_out,
-    output logic [TIDX_W-1:0]  tri_id_out,
+    output logic [ID_W-1:0]  vert_id_out,
+    output logic [ID_W-1:0]  tri_id_out,
+    output logic [ID_W-1:0]  inst_id_out,
     output logic [TRANS_W-1:0] transform_out,
-    output logic [7:0] inst_id_out,
     
     // spi driver ↔ frame driver
-    output logic [7:0] max_inst,
+    output logic [ID_W-1:0] max_inst,
     output logic create_done,
     
     // Testing
     output logic [3:0] spi_status_test, // JC pmod 1-4
     output logic [3:0] error_status_test, // JC pmod 7-10
     output logic [3:0] ready_ctr_out,
-    output logic       CS_ready_out
+    output logic       CS_ready_out,
+    output logic [3:0] wait_ctr_out
     );
     
     // spi tri-state logic
@@ -223,7 +225,7 @@ module spi_driver #(
                             if(tri_base + {tri_count[TIDX_W-5:0], spi_in} >= MAX_TRI) begin
                                 error_status <= OUT_OF_MEMORY;
                                 error_flag   <= 1;
-                            end else if({tri_count[VIDX_W-5:0], spi_in} >= MAX_VERT_CNT) begin
+                            end else if({tri_count[TIDX_W-5:0], spi_in} >= MAX_TRI_CNT) begin
                                 error_status <= BUFFER_FULL;
                                 error_flag   <= 1;
                             end
@@ -359,27 +361,19 @@ module spi_driver #(
     end
     
     logic [3:0] ready_ctr;
-    logic       ctn_started;
-    logic       output_ready;
     logic       waiting;
-    assign output_ready = spi_state == CREATE_VERT_RESULT || spi_state == CREATE_TRI_RESULT || 
-                          spi_state == CREATE_INST_RESULT || spi_state == STATUS_OUT;
+    
     // Hold read for 8 cycles to remove junk data
     always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
             ready_ctr <= 0;
             CS_ready  <= 0;
-            ctn_started <= 0;
         end else if(CS_n || read_done || write_done || waiting) begin
             CS_ready <= 0;
             ready_ctr <= 0;
         end else if(!CS_n && !CS_ready) begin
-            if(!ctn_started) begin
-                ready_ctr <= 1;
-                ctn_started <= 1;
-            end else if(ready_ctr == 7) begin
+            if(ready_ctr == 7) begin
                 ready_ctr <= 0;
-                ctn_started <= 0;
                 CS_ready  <= 1;
             end else begin
                 ready_ctr <= ready_ctr +1;
@@ -398,7 +392,7 @@ module spi_driver #(
         end else if(waiting || read_done) begin
             wait_ctr <= wait_ctr +1;
             waiting  <= 1;
-        end else if(waiting || write_done) begin
+        end else if(write_done) begin
             // wait the extra half cycle due to write_done going high on negedge
             wait_ctr <= 0;
             waiting  <= 1;
@@ -418,39 +412,49 @@ module spi_driver #(
             write_done   <= 0;
             case (spi_state)
                 CREATE_VERT_RESULT: begin
-                    spi_oe  <= 1;
-                    if (out_ctr == 1) begin
+                    if (out_ctr == 3) begin
+                        spi_oe  <= 1;
                         spi_out <= vert_id_out[3:0];
                         out_ctr <= 0;
                         spi_out_done <= 1; // signal done to posedge FSM
-                    end else begin
+                    end else if (out_ctr == 2) begin
+                        spi_oe  <= 1;
                         out_ctr <= out_ctr + 1;
                         spi_out <= vert_id_out[7:4];
-                    end
+                    end else begin
+                        out_ctr <= out_ctr + 1;
+                    end 
                 end
 
                 CREATE_TRI_RESULT: begin
-                    spi_oe  <= 1;
-                    if (out_ctr == 1) begin
+                    if (out_ctr == 3) begin
+                        spi_oe  <= 1;
                         spi_out <= tri_id_out[3:0];
-                        out_ctr   <= 0;
-                        spi_out_done <= 1;
-                    end else begin
+                        out_ctr <= 0;
+                        spi_out_done <= 1; // signal done to posedge FSM
+                    end else if (out_ctr == 2) begin
+                        spi_oe  <= 1;
                         out_ctr <= out_ctr + 1;
                         spi_out <= tri_id_out[7:4];
-                    end
-                end
-
-                CREATE_INST_RESULT: begin
-                    spi_oe  <= 1;
-                    if (out_ctr == 1) begin
-                        spi_out   <= inst_id_out[3:0];
-                        out_ctr   <= 0;
-                        spi_out_done <= 1;
                     end else begin
                         out_ctr <= out_ctr + 1;
+                    end 
+                end
+                
+                
+                CREATE_INST_RESULT: begin
+                    if (out_ctr == 3) begin
+                        spi_oe  <= 1;
+                        spi_out <= inst_id_out[3:0];
+                        out_ctr <= 0;
+                        spi_out_done <= 1; // signal done to posedge FSM
+                    end else if (out_ctr == 2) begin
+                        spi_oe  <= 1;
+                        out_ctr <= out_ctr + 1;
                         spi_out <= inst_id_out[7:4];
-                    end
+                    end else begin
+                        out_ctr <= out_ctr + 1;
+                    end 
                 end
 
                 STATUS_OUT: begin
@@ -473,5 +477,6 @@ module spi_driver #(
     assign error_status_test = error_status;
     assign ready_ctr_out = ready_ctr;
     assign CS_ready_out = CS_ready;
+    assign wait_ctr_out = wait_ctr;
     
 endmodule
