@@ -216,7 +216,7 @@ module spi_driver #(
                             
                             tri_count <= {tri_count[TIDX_W-5:0], spi_in};
                             tri_base  <= next_tri_base;
-                            next_tri_base  <= tri_base + {tri_count[TIDX_W-5:0], spi_in};
+                            next_tri_base  <= next_tri_base + {tri_count[TIDX_W-5:0], spi_in};
                             
                             tri_hdr_valid <= 1;
                             nbl_ctr    <= 0;
