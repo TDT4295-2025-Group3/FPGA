@@ -36,12 +36,14 @@ module top_raster_system #(
     output logic [3:0] error_status_test, // JC pmod 7-10
     output logic [3:0] ready_ctr_out,
     output logic       CS_ready_out,
+    output logic       sck_toggle,
     
     // LEDs
     output logic output_bit,
     output logic rst_test_LED
 );
     assign rst_test_LED = rst_n;
+    
     // ----------------------------------------------------------------
     // Clocks
     // ----------------------------------------------------------------
@@ -70,6 +72,16 @@ module top_raster_system #(
     
     logic rst_sck;
     assign rst_sck = !rst_n;
+    
+    // test section
+    always_ff @(posedge sck or posedge rst_sck) begin 
+        if(rst_sck) begin 
+            sck_toggle <= 0;
+        end else begin
+            sck_toggle <= !sck_toggle;
+        end
+    end
+    
         
     // =============================
     // Internal signals
@@ -94,7 +106,7 @@ module top_raster_system #(
 
     logic        inst_valid, inst_id_valid;
     logic [ID_W-1:0] vert_id_out;
-//    logic [ID_W-1:0] tri_id_out;
+    logic [ID_W-1:0] tri_id_out;
     logic [ID_W-1:0] inst_id_out;
     logic [TRANS_W-1:0] transform_out_spi;
     logic [3:0] status;
@@ -426,8 +438,8 @@ module top_raster_system #(
 //        .busy(project_busy)
 //    );
     
-    assign tri_id  = tri_id_out[7:0];
-    assign vert_id = vert_id_out[7:0];
+//    assign tri_id  = tri_id_out[7:0];
+//    assign vert_id = vert_id_out[7:0];
     always @(posedge clk_render) begin
         if(|out_model_world)
             output_bit <= 1;

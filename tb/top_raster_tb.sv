@@ -39,6 +39,7 @@ module tb_top_raster_system;
     
     // test ports
     logic [7:0] red_1_2;
+    logic [3:0] wait_ctr_out;
     logic [7:0] tri_id_out;
     logic [3:0] spi_status_test;
     logic [3:0] error_status_test;
@@ -56,8 +57,9 @@ module tb_top_raster_system;
         .CS_n(CS_n),
         .spi_io(spi_io),
         
+        .wait_ctr_out(wait_ctr_out),
 //        .red_1_2(red_1_2),
-        .tri_id_out(tri_id_out),
+//        .tri_id_out(tri_id_out),
         .spi_status_test(spi_status_test),
         .error_status_test(error_status_test),
         .output_bit(output_bit)

@@ -165,7 +165,7 @@ module spi_driver #(
                             
                             vert_count <= {vert_count[VIDX_W-5:0], spi_in};
                             vert_base  <= next_vert_base;
-                            next_vert_base  <= vert_base + {vert_count[VIDX_W-5:0], spi_in};
+                            next_vert_base  <= next_vert_base + {vert_count[VIDX_W-5:0], spi_in};
                             
                             vert_hdr_valid <= 1;
                             nbl_ctr    <= 0;
