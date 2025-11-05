@@ -9,7 +9,7 @@ cd build
 # Project name and top module for synthesis
 set proj_name "vga_rasterizer"
 set top_name "top"
-set part_name "xc7a35ticsg324-1L"
+set part_name "xc7a100ticsg324-1L"
 
 # Create project
 create_project $proj_name . -part $part_name -force
