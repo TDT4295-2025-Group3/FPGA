@@ -73,15 +73,33 @@ module top_raster_system #(
     logic rst_sck;
     assign rst_sck = !rst_n;
     
+        // =========================================================
+    // SPI clock synchronization and glitch filtering
+    // =========================================================
+    logic sck_sync_level;
+    logic sck_rise_pulse;
+    logic sck_fall_pulse;
+
+    spi_sck_sync #(
+        .MIN_PERIOD_CYCLES(23)   // // we want a min period of n_max = T_raw/(2*T_ref)
+    ) u_spi_sck_sync (
+        .clk_ref(clk_100m),     // reference clock (100 MHz domain)
+        .rst_n(rst_n),
+        .sck_raw(sck),          // raw external SCK input
+        .sck_level(sck_sync_level), // stable version of SCK (optional use)
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse)
+    );
+
+    
     // test section
-    always_ff @(posedge sck or posedge rst_sck) begin 
+    always_ff @(posedge clk_100m or posedge rst_sck) begin 
         if(rst_sck) begin 
             sck_toggle <= 0;
-        end else begin
+        end else if(sck_rise_pulse || sck_fall_pulse) begin
             sck_toggle <= !sck_toggle;
         end
     end
-    
         
     // =============================
     // Internal signals
@@ -186,10 +204,13 @@ module top_raster_system #(
         .DATA_W(DATA_W),
         .TRANS_W(TRANS_W)
     ) u_spi_driver (
-        .sck(sck),
+        .sck(clk_100m),
         .rst(rst_sck),
         .spi_io(spi_io),
         .CS_n(CS_n),
+        
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse),
 
         .opcode_valid(opcode_valid),
         .opcode(opcode),

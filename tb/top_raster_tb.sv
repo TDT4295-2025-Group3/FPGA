@@ -73,7 +73,7 @@ module tb_top_raster_system;
     initial sck_en = 0;
     always begin
         if (sck_en) begin
-            #50;
+            #250; // 10MHz:100ns, 2MHz: 500ns 
             if (sck_en)
                 sck = ~sck;
         end else begin
@@ -104,10 +104,10 @@ module tb_top_raster_system;
         begin
             @(negedge sck);
 //            CS_n = 0;
-            spi_de = 1;
+//            spi_de = 1;
             spi_drive = val;
             @(posedge sck);
-            spi_de = 0;
+//            spi_de = 0;
         end
     endtask
 
@@ -118,6 +118,7 @@ module tb_top_raster_system;
             CS_n = 0;
             #100
             sck_en = 1;
+            spi_de = 1;
             repeat (7) spi_send_nybble(4'b1010);
             spi_send_nybble(opcode);
         end
@@ -126,6 +127,8 @@ module tb_top_raster_system;
     task spi_return_result();
         // wait for post junk data after read
         // here i will wait with wait_ctr
+        repeat (1) @(negedge sck);
+        spi_de = 0;
         repeat (3) @(posedge sck);
         #50
         sck_en = 0;
@@ -155,6 +158,8 @@ module tb_top_raster_system;
     endtask
     
     task spi_return_status();
+        repeat (1) @(negedge sck);
+        spi_de = 0;
         repeat (3) @(posedge sck);
         #50
         sck_en = 0;
@@ -285,167 +290,383 @@ module tb_top_raster_system;
             repeat (3) spi_send_nybble(4'h3);
             spi_return_result();   
             
-            // CREATE_VERT 4
-            spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h3);
-            // vert 0 pos (0,0,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(4'hA);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h1);
-            // vert 1 pos (0,2,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hB);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h2);
-            // vert 2 pos (0,0,2)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hC);
-            repeat (4) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();   
+//            // CREATE_VERT 4
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();   
             
-            // CREATE_VERT 5
-            spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h3);
-            // vert 0 pos (0,0,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(4'hA);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h1);
-            // vert 1 pos (0,2,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hB);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h2);
-            // vert 2 pos (0,0,2)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hC);
-            repeat (4) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();   
+//            // CREATE_VERT 5
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();   
             
-            // CREATE_VERT 6
-            spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h3);
-            // vert 0 pos (0,0,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(4'hA);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h1);
-            // vert 1 pos (0,2,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hB);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h2);
-            // vert 2 pos (0,0,2)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hC);
-            repeat (4) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();   
+//            // CREATE_VERT 6
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();   
             
-            // CREATE_VERT 7
-            spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h3);
-            // vert 0 pos (0,0,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(4'hA);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h1);
-            // vert 1 pos (0,2,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hB);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h2);
-            // vert 2 pos (0,0,2)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hC);
-            repeat (4) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();   
+//            // CREATE_VERT 7
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();   
             
-            // CREATE_VERT 8
-            spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h3);
-            // vert 0 pos (0,0,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(4'hA);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h1);
-            // vert 1 pos (0,2,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hB);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h2);
-            // vert 2 pos (0,0,2)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hC);
-            repeat (4) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();       
+//            // CREATE_VERT 8
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();       
             
-            // CREATE_VERT 9
-            spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h3);
-            // vert 0 pos (0,0,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(4'hA);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h1);
-            // vert 1 pos (0,2,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hB);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h2);
-            // vert 2 pos (0,0,2)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hC);
-            repeat (4) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();     
+//            // CREATE_VERT 9
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();           
+            
+//            // CREATE_VERT 10
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();        
+            
+//            // CREATE_VERT 11
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();        
+            
+//            // CREATE_VERT 12
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();        
+            
+//            // CREATE_VERT 13
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();        
+            
+//            // CREATE_VERT 14
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();        
+            
+//            // CREATE_VERT 15
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();        
+            
+//            // CREATE_VERT 16
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();        
+            
+//            // CREATE_VERT 17
+//            spi_send_opcode(OP_CREATE_VERT);
+//            // Send vertex count
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h0);
+//            spi_send_nybble(4'h3);
+//            // vert 0 pos (0,0,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(4'hA);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h1);
+//            // vert 1 pos (0,2,0)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hB);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h2);
+//            // vert 2 pos (0,0,2)
+//            repeat (8) spi_send_nybble(0);
+//            repeat (8) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(0);
+//            repeat (1) spi_send_nybble(4'hC);
+//            repeat (4) spi_send_nybble(0);
+//            repeat (3) spi_send_nybble(4'h3);
+//            spi_return_result();  
 
             // CREATE_TRI 1
             // send tri count

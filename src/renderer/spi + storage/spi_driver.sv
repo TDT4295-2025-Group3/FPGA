@@ -27,6 +27,9 @@ module spi_driver #(
     inout  logic [3:0] spi_io,  // Octo spi input/output connection (only 4 pins is used)
     input  logic CS_n,          // Chip select, active low
     
+    input  logic sck_rise_pulse,
+    input  logic sck_fall_pulse,
+    
     // spi ↔ mcu interface
     output logic        opcode_valid,
     output logic [3:0]  opcode,
@@ -98,7 +101,6 @@ module spi_driver #(
     LOAD_UPDATE_INST, UPDATE_INST} spi_state;
     
     always_ff @(posedge sck or posedge rst) begin
-        opcode_valid <= 0;
         if(rst) begin
             vert_ctr      <= 0;
             tri_ctr       <= 0;
@@ -130,7 +132,8 @@ module spi_driver #(
             error_status <= OK;
             spi_state <= LOAD_OP;
         end else begin 
-            if(!CS_n && CS_ready) begin
+            if(!CS_n && CS_ready && sck_rise_pulse) begin
+                opcode_valid <= 0;
                 case(spi_state)
                     LOAD_OP: begin
                         // default values
@@ -140,15 +143,24 @@ module spi_driver #(
                         tri_hdr_valid  <= 0;
                         inst_valid     <= 0;
                         inst_id_valid  <= 0;
-                        opcode_valid   <= 1;
                         opcode   <= spi_in;
                         nbl_ctr  <= 0;
-                             if(OP_CREATE_VERT == spi_in && !spi_oe) spi_state <= LOAD_VERT_COUNT;
-                        else if(OP_CREATE_TRI  == spi_in && !spi_oe) spi_state <= LOAD_TRI_COUNT;
-                        else if(OP_CREATE_INST == spi_in && !spi_oe) spi_state <= LOAD_INST_DATA;
-                        else if(OP_UPDATE_INST == spi_in && !spi_oe) spi_state <= LOAD_UPDATE_INST;
-                        else if(OP_IDLE == spi_in && !spi_oe) spi_state <= LOAD_OP;
-                        else begin
+                        if(OP_CREATE_VERT == spi_in && !spi_oe) begin 
+                             spi_state <= LOAD_VERT_COUNT; 
+                             opcode_valid <= 1;
+                        end else if(OP_CREATE_TRI  == spi_in && !spi_oe) begin 
+                             spi_state <= LOAD_TRI_COUNT;
+                             opcode_valid <= 1;
+                        end else if(OP_CREATE_INST == spi_in && !spi_oe) begin 
+                             spi_state <= LOAD_INST_DATA;
+                             opcode_valid <= 1;
+                        end else if(OP_UPDATE_INST == spi_in && !spi_oe) begin 
+                             spi_state <= LOAD_UPDATE_INST;
+                             opcode_valid <= 1;
+                        end else if(OP_IDLE == spi_in && !spi_oe) begin 
+                             spi_state <= LOAD_OP;
+                             opcode_valid <= 1;
+                        end else begin
                             opcode_valid <= 0;
                             error_status <= INVALID_OPCODE;
                             error_flag   <= 1;
@@ -356,7 +368,7 @@ module spi_driver #(
     always_ff @(posedge sck or posedge rst) begin
         if(rst)
             max_inst <= 0; // there is at least one transform inst 
-        else if (inst_id_out > max_inst && inst_valid)
+        else if (sck_rise_pulse && inst_id_out > max_inst && inst_valid)
             max_inst <= inst_id_out;
     end
     
@@ -368,17 +380,19 @@ module spi_driver #(
         if(rst) begin
             ready_ctr <= 0;
             CS_ready  <= 0;
-        end else if(CS_n || read_done || write_done || waiting) begin
-            CS_ready <= 0;
-            ready_ctr <= 0;
-        end else if(!CS_n && !CS_ready) begin
-            if(ready_ctr == 7) begin
+        end else if(sck_rise_pulse) begin
+            if(CS_n || read_done || write_done || waiting) begin
+                CS_ready <= 0;
                 ready_ctr <= 0;
-                CS_ready  <= 1;
-            end else begin
-                ready_ctr <= ready_ctr +1;
-            end
-        end 
+            end else if(!CS_n && !CS_ready) begin
+                if(ready_ctr == 7) begin
+                    ready_ctr <= 0;
+                    CS_ready  <= 1;
+                end else begin
+                    ready_ctr <= ready_ctr +1;
+                end
+            end 
+        end
     end
     
     logic [3:0] wait_ctr;
@@ -386,16 +400,18 @@ module spi_driver #(
         if(rst) begin
             waiting  <= 0;
             wait_ctr <= 0;
-        end else if(wait_ctr == 2) begin
-            waiting  <= 0;
-            wait_ctr <= 0;
-        end else if(waiting || read_done) begin
-            wait_ctr <= wait_ctr +1;
-            waiting  <= 1;
-        end else if(write_done) begin
-            // wait the extra half cycle due to write_done going high on negedge
-            wait_ctr <= 0;
-            waiting  <= 1;
+        end else if(sck_rise_pulse) begin
+            if(wait_ctr == 2) begin
+                waiting  <= 0;
+                wait_ctr <= 0;
+            end else if(waiting || read_done) begin
+                wait_ctr <= wait_ctr +1;
+                waiting  <= 1;
+            end else if(write_done) begin
+                // wait the extra half cycle due to write_done going high on negedge
+                wait_ctr <= 0;
+                waiting  <= 1;
+            end
         end
     end
     
@@ -406,70 +422,72 @@ module spi_driver #(
             spi_oe       <= 0;
             out_ctr      <= 0;
             write_done   <= 0;
-        end else if (!CS_n && CS_ready && !read_done && !waiting) begin // && CS_ready
-            spi_out_done <= 0; // default not done
-            spi_oe       <= 0; // default spi_in
-            write_done   <= 0;
-            case (spi_state)
-                CREATE_VERT_RESULT: begin
-                    if (out_ctr == 3) begin
+        end else if(sck_fall_pulse) begin
+            if (!CS_n && CS_ready && !read_done && !waiting) begin // && CS_ready
+                spi_out_done <= 0; // default not done
+                spi_oe       <= 0; // default spi_in
+                write_done   <= 0;
+                case (spi_state)
+                    CREATE_VERT_RESULT: begin
+                        if (out_ctr == 3) begin
+                            spi_oe  <= 1;
+                            spi_out <= vert_id_out[3:0];
+                            out_ctr <= 0;
+                            spi_out_done <= 1; // signal done to posedge FSM
+                        end else if (out_ctr == 2) begin
+                            spi_oe  <= 1;
+                            out_ctr <= out_ctr + 1;
+                            spi_out <= vert_id_out[7:4];
+                        end else begin
+                            out_ctr <= out_ctr + 1;
+                        end 
+                    end
+    
+                    CREATE_TRI_RESULT: begin
+                        if (out_ctr == 3) begin
+                            spi_oe  <= 1;
+                            spi_out <= tri_id_out[3:0];
+                            out_ctr <= 0;
+                            spi_out_done <= 1; // signal done to posedge FSM
+                        end else if (out_ctr == 2) begin
+                            spi_oe  <= 1;
+                            out_ctr <= out_ctr + 1;
+                            spi_out <= tri_id_out[7:4];
+                        end else begin
+                            out_ctr <= out_ctr + 1;
+                        end 
+                    end
+                    
+                    
+                    CREATE_INST_RESULT: begin
+                        if (out_ctr == 3) begin
+                            spi_oe  <= 1;
+                            spi_out <= inst_id_out[3:0];
+                            out_ctr <= 0;
+                            spi_out_done <= 1; // signal done to posedge FSM
+                        end else if (out_ctr == 2) begin
+                            spi_oe  <= 1;
+                            out_ctr <= out_ctr + 1;
+                            spi_out <= inst_id_out[7:4];
+                        end else begin
+                            out_ctr <= out_ctr + 1;
+                        end 
+                    end
+    
+                    STATUS_OUT: begin
                         spi_oe  <= 1;
-                        spi_out <= vert_id_out[3:0];
-                        out_ctr <= 0;
-                        spi_out_done <= 1; // signal done to posedge FSM
-                    end else if (out_ctr == 2) begin
-                        spi_oe  <= 1;
-                        out_ctr <= out_ctr + 1;
-                        spi_out <= vert_id_out[7:4];
-                    end else begin
-                        out_ctr <= out_ctr + 1;
-                    end 
-                end
-
-                CREATE_TRI_RESULT: begin
-                    if (out_ctr == 3) begin
-                        spi_oe  <= 1;
-                        spi_out <= tri_id_out[3:0];
-                        out_ctr <= 0;
-                        spi_out_done <= 1; // signal done to posedge FSM
-                    end else if (out_ctr == 2) begin
-                        spi_oe  <= 1;
-                        out_ctr <= out_ctr + 1;
-                        spi_out <= tri_id_out[7:4];
-                    end else begin
-                        out_ctr <= out_ctr + 1;
-                    end 
-                end
-                
-                
-                CREATE_INST_RESULT: begin
-                    if (out_ctr == 3) begin
-                        spi_oe  <= 1;
-                        spi_out <= inst_id_out[3:0];
-                        out_ctr <= 0;
-                        spi_out_done <= 1; // signal done to posedge FSM
-                    end else if (out_ctr == 2) begin
-                        spi_oe  <= 1;
-                        out_ctr <= out_ctr + 1;
-                        spi_out <= inst_id_out[7:4];
-                    end else begin
-                        out_ctr <= out_ctr + 1;
-                    end 
-                end
-
-                STATUS_OUT: begin
-                    spi_oe  <= 1;
-                    spi_out <= spi_out_r;
-                    spi_out_done <= 1;
-                    write_done   <= 1;
-                end
-                default: begin 
-                    spi_oe  <= 0;
-                end
-            endcase
-        end else begin
-            spi_oe  <= 0;
-            write_done <= 0;
+                        spi_out <= spi_out_r;
+                        spi_out_done <= 1;
+                        write_done   <= 1;
+                    end
+                    default: begin 
+                        spi_oe  <= 0;
+                    end
+                endcase
+            end else begin
+                spi_oe  <= 0;
+                write_done <= 0;
+            end
         end
     end
     

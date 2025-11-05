@@ -1,5 +1,8 @@
 module spi_sck_sync #(
-    parameter int MIN_PERIOD_CYCLES = 3  // reject glitches shorter than ~75 ns at 40MHz
+    parameter int MIN_PERIOD_CYCLES = 4  // we want a min period of n_max = T_raw/(2*T_ref)
+    // 100MHz -> 10ns
+    // 10MH   -> 100ns
+    // 2MHz   -> 500ns, n = 25
 )(
     input  wire clk_ref,          // 100MHz ?
     input  wire rst_n,
@@ -31,8 +34,8 @@ module spi_sck_sync #(
 //            prev <= sync_1;
 //    end
 
-    wire rise_raw =  sync_1 & ~sync_0;
-    wire fall_raw = ~sync_1 &  sync_0;
+    wire rise_raw =  !sync_1 &  sync_0;
+    wire fall_raw =   sync_1 & !sync_0;
 
     // --- Optional: reject glitches that come too close ---
     localparam int CNT_W = $clog2(MIN_PERIOD_CYCLES + 2);
