@@ -243,30 +243,14 @@ module top (
     transform_setup_t transform_setup;
 
     assign camera_transform.pos         = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
-    assign camera_transform.rot_sin     = sw_cam_en ?
-                                          '{x:sin_cam_x, y:sin_cam_y, z:sin_cam_z} :
-                                          '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
-    assign camera_transform.rot_cos     = sw_cam_en ?
-                                          '{x:cos_cam_x, y:cos_cam_y, z:cos_cam_z} :
-                                          '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
+    assign camera_transform.rot_sin     = '{x:sin_cam_x, y:sin_cam_y, z:sin_cam_z};
+    assign camera_transform.rot_cos     = '{x:cos_cam_x, y:cos_cam_y, z:cos_cam_z};
     assign camera_transform.scale       = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
 
-    // assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
-    // assign transform.rot_sin            = '{x:32'h0000_8000, y:32'hFFFF_8000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0.5, -0.5, 0)
-    // assign transform.rot_cos            = '{x:32'h0000_DDB4, y:32'h0000_DDB4, z:32'h0001_0000}; // cos(rx,ry,rz) = (0.866025, 0.866025, 1) 
-    // assign transform.scale              = '{x:32'h0000_199A, y:32'h0000_199A, z:32'h0000_199A}; // scale = (0.1, 0.1, 0.1)
-    // assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'hFFF6_0000}; // pos = (0, 0, -10)
-    // assign transform.rot_sin            = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000}; // sin(rx,ry,rz) = (0, 0, 0)
-    // assign transform.rot_cos            = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // cos(rx,ry,rz) = (1, 1, 1)
     assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0100_0000}; // pos = (0, 0, 16)
-    assign transform.rot_sin            = sw_cam_en ?
-                                          '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000} :
-                                          '{x:sin_x, y:sin_y, z:sin_z};
-    assign transform.rot_cos            = sw_cam_en ?
-                                          '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000} :
-                                          '{x:cos_x, y:cos_y, z:cos_z};
-    assign transform.scale              = '{x:32'h0000_4000, y:32'h0000_4000, z:32'h0000_4000}; // scale = (1, 1, 1)
-    // assign transform.scale              = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000}; // scale = (1, 1, 1)
+    assign transform.rot_sin            = '{x:sin_x, y:sin_y, z:sin_z};
+    assign transform.rot_cos            = '{x:cos_x, y:cos_y, z:cos_z};
+    assign transform.scale              = '{x:32'h0000_4000, y:32'h0000_4000, z:32'h0000_4000}; // scale = (0.25, 0.25, 0.25)
 
 
 
