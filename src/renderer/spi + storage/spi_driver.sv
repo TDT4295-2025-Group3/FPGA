@@ -27,6 +27,10 @@ module spi_driver #(
     inout  logic [3:0] spi_io,  // Octo spi input/output connection (only 4 pins is used)
     input  logic CS_n,          // Chip select, active low
     
+    // top module feedback
+    output logic soft_reset,
+    
+    // Smooth clock flancs
     input  logic sck_rise_pulse,
     input  logic sck_fall_pulse,
     
@@ -61,8 +65,7 @@ module spi_driver #(
     output logic [3:0] spi_status_test, // JC pmod 1-4
     output logic [3:0] error_status_test, // JC pmod 7-10
     output logic [3:0] ready_ctr_out,
-    output logic       CS_ready_out,
-    output logic [3:0] wait_ctr_out
+    output logic       CS_ready_out
     );
     
     // spi tri-state logic
@@ -127,13 +130,23 @@ module spi_driver #(
             tri_out        <= 0;
             transform_out  <= 0;
             create_done    <= 0;
-            read_done <= 0;
-            error_flag   <= 0;
-            error_status <= OK;
-            spi_state <= LOAD_OP;
-        end else begin 
-            if(!CS_n && CS_ready && sck_rise_pulse) begin
-                opcode_valid <= 0;
+            opcode_valid   <= 0;
+            read_done      <= 0;
+            soft_reset     <= 0;
+            error_flag     <= 0;
+            error_status   <= OK;
+            spi_state      <= LOAD_OP;
+            if(soft_reset) begin
+                // keep values for wipe all command
+                read_done      <= read_done;
+                error_flag     <= error_flag;
+                error_status   <= error_status;
+                spi_state      <= spi_state;
+            end
+        end else if(sck_rise_pulse) begin 
+            opcode_valid <= 0;
+            soft_reset   <= 0;
+            if(!CS_n && CS_ready) begin
                 case(spi_state)
                     LOAD_OP: begin
                         // default values
@@ -146,20 +159,24 @@ module spi_driver #(
                         opcode   <= spi_in;
                         nbl_ctr  <= 0;
                         if(OP_CREATE_VERT == spi_in && !spi_oe) begin 
-                             spi_state <= LOAD_VERT_COUNT; 
-                             opcode_valid <= 1;
+                            spi_state <= LOAD_VERT_COUNT; 
+                            opcode_valid <= 1;
                         end else if(OP_CREATE_TRI  == spi_in && !spi_oe) begin 
-                             spi_state <= LOAD_TRI_COUNT;
-                             opcode_valid <= 1;
+                            spi_state <= LOAD_TRI_COUNT;
+                            opcode_valid <= 1;
                         end else if(OP_CREATE_INST == spi_in && !spi_oe) begin 
-                             spi_state <= LOAD_INST_DATA;
-                             opcode_valid <= 1;
+                            spi_state <= LOAD_INST_DATA;
+                            opcode_valid <= 1;
                         end else if(OP_UPDATE_INST == spi_in && !spi_oe) begin 
-                             spi_state <= LOAD_UPDATE_INST;
-                             opcode_valid <= 1;
-                        end else if(OP_IDLE == spi_in && !spi_oe) begin 
-                             spi_state <= LOAD_OP;
-                             opcode_valid <= 1;
+                            spi_state <= LOAD_UPDATE_INST;
+                            opcode_valid <= 1;
+                        end else if(OP_WIPE_ALL == spi_in && !spi_oe) begin
+                            read_done <= 1;
+                            soft_reset <= 1;
+                            spi_out_r <= error_flag ? error_status : OK;
+                            error_status <= OK;
+                            error_flag   <= 0;
+                            spi_state <= STATUS_OUT;
                         end else begin
                             opcode_valid <= 0;
                             error_status <= INVALID_OPCODE;
@@ -172,14 +189,8 @@ module spi_driver #(
                             vert_count <= {vert_count[VIDX_W-5:0], spi_in};
                             nbl_ctr    <= nbl_ctr +1;
                         end else if (nbl_ctr == VIDX_W/4-1) begin
-                            vert_id_out  <= next_vert_id;
-                            next_vert_id <= next_vert_id + 1;
-                            
                             vert_count <= {vert_count[VIDX_W-5:0], spi_in};
                             vert_base  <= next_vert_base;
-                            next_vert_base  <= next_vert_base + {vert_count[VIDX_W-5:0], spi_in};
-                            
-                            vert_hdr_valid <= 1;
                             nbl_ctr    <= 0;
                             spi_state  <= CREATE_VERT;
 
@@ -189,6 +200,12 @@ module spi_driver #(
                             end else if({vert_count[VIDX_W-5:0], spi_in} >= MAX_VERT_CNT) begin
                                 error_status <= BUFFER_FULL;
                                 error_flag     <= 1;
+                            end else if(!error_flag) begin
+                                // avoid incrementing if there are any previous erros
+                                vert_id_out  <= next_vert_id;
+                                next_vert_id <= next_vert_id + 1;
+                                next_vert_base  <= next_vert_base + {vert_count[VIDX_W-5:0], spi_in};
+                                vert_hdr_valid <= 1;
                             end
                         end
                     end
@@ -222,15 +239,9 @@ module spi_driver #(
                         if(nbl_ctr < TIDX_W/4-1) begin
                             tri_count <= {tri_count[TIDX_W-5:0], spi_in};
                             nbl_ctr   <= nbl_ctr +1;
-                        end else if (nbl_ctr == TIDX_W/4-1) begin                            
-                            tri_id_out  <= next_tri_id;
-                            next_tri_id <= next_tri_id + 1;
-                            
+                        end else if (nbl_ctr == TIDX_W/4-1) begin
                             tri_count <= {tri_count[TIDX_W-5:0], spi_in};
                             tri_base  <= next_tri_base;
-                            next_tri_base  <= next_tri_base + {tri_count[TIDX_W-5:0], spi_in};
-                            
-                            tri_hdr_valid <= 1;
                             nbl_ctr    <= 0;
                             spi_state  <= CREATE_TRI;
 
@@ -240,6 +251,12 @@ module spi_driver #(
                             end else if({tri_count[TIDX_W-5:0], spi_in} >= MAX_TRI_CNT) begin
                                 error_status <= BUFFER_FULL;
                                 error_flag   <= 1;
+                            end else if(!error_flag) begin
+                                // avoid incrementing if there are any previous erros               
+                                tri_id_out  <= next_tri_id;
+                                next_tri_id <= next_tri_id + 1;
+                                next_tri_base  <= next_tri_base + {tri_count[TIDX_W-5:0], spi_in};
+                                tri_hdr_valid <= 1;
                             end
                         end
                     end
@@ -281,16 +298,18 @@ module spi_driver #(
                             tri_id_out <= {tri_id_out[3:0], spi_in};
                             
                             inst_id_out  <= next_inst_id;
-                            next_inst_id <= next_inst_id + 1;
+                            if(error_flag) next_inst_id <= next_inst_id + 1;
                             nbl_ctr      <= 0;
                             spi_state    <= CREATE_INST;
                             
                             if(next_inst_id >= MAX_INST) begin
                                 error_status <= OUT_OF_MEMORY;
-                                error_flag     <= 1;
+                                next_inst_id <= next_inst_id;
+                                error_flag   <= 1;
                             end else if(vert_id_out >= MAX_VERT_BUF || tri_id_out >= MAX_TRI_BUF) begin
                                 error_status <= INVALID_ID;
-                                error_flag     <= 1;
+                                next_inst_id <= next_inst_id;
+                                error_flag   <= 1;
                             end
                         end
                     end
@@ -328,12 +347,13 @@ module spi_driver #(
                             transform_out <= {transform_out[TRANS_W-5:0], spi_in};
                             inst_valid <= 1;
                             nbl_ctr    <= 0;
-                            spi_state  <= STATUS_OUT;
                             
                             read_done <= 1;
-                            spi_out_r <= error_flag ? error_status : OK;
-                            error_status <= OK;
                             create_done <= 1;
+                            spi_out_r <= error_flag ? error_status : OK;
+                            error_flag   <= 0;
+                            error_status <= OK;
+                            spi_state  <= STATUS_OUT;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
                             transform_out <= {transform_out[TRANS_W-5:0], spi_in};
@@ -348,10 +368,10 @@ module spi_driver #(
                         inst_valid <= 0;
                         read_done  <= 0;
                         if(spi_out_done) begin
-                            spi_state <= STATUS_OUT;
                             spi_out_r <= error_flag ? error_status : OK;
                             error_status <= OK;
                             error_flag   <= 0;
+                            spi_state <= STATUS_OUT;
                         end 
                     end
 
@@ -377,7 +397,7 @@ module spi_driver #(
     
     // Hold read for 8 cycles to remove junk data
     always_ff @(posedge sck or posedge rst) begin
-        if(rst) begin
+        if(rst && !soft_reset) begin
             ready_ctr <= 0;
             CS_ready  <= 0;
         end else if(sck_rise_pulse) begin
@@ -397,7 +417,7 @@ module spi_driver #(
     
     logic [3:0] wait_ctr;
     always_ff @(posedge sck or posedge rst) begin
-        if(rst) begin
+        if(rst && !soft_reset) begin
             waiting  <= 0;
             wait_ctr <= 0;
         end else if(sck_rise_pulse) begin

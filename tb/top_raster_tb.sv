@@ -57,8 +57,8 @@ module tb_top_raster_system;
         .CS_n(CS_n),
         .spi_io(spi_io),
         
-        .wait_ctr_out(wait_ctr_out),
-//        .red_1_2(red_1_2),
+        .red_1_2(red_1_2),
+//        .wait_ctr_out(wait_ctr_out),
 //        .tri_id_out(tri_id_out),
         .spi_status_test(spi_status_test),
         .error_status_test(error_status_test),
@@ -142,10 +142,12 @@ module tb_top_raster_system;
         CS_n = 0;
         #100
         sck_en = 1;
+        spi_de = 1;
         // Junk data (ready_ctr incrementing here)
         repeat (7) spi_send_nybble(4'b1100);
         // Two padding nybbles for the spi pins to stabalise (idc just works better)
         repeat (2) spi_send_nybble(4'b0000);
+        spi_de = 0;
         // id +2, status output +1: 3 cycles output
         repeat (3) @(posedge sck);
         // post junk data after writeback
@@ -828,9 +830,13 @@ module tb_top_raster_system;
             // update inst doesn't really need this long of a wait
             spi_return_status();
             
-            // wait for things to be done
+            // wait for frame driver send data down the pipeline
             #6000
-            sck_en = 1;
+            
+            // Terminate the system
+            spi_send_opcode(OP_WIPE_ALL);
+            spi_return_status();
+            
         end
     endtask
 

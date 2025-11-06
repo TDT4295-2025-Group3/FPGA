@@ -29,9 +29,11 @@ module top_raster_system #(
     input  logic CS_n,           // chip select
     inout  logic [3:0] spi_io,   // SPI inputs
     
+    // JB pmod
+    output logic [7:0] red_1_2,   // JB pmod (send out color of vertex 1 and 2 of a triangle)
 //    output logic [ID_W-1:0] tri_id_out,
-//    output logic [3:0] red_1_2,   // JB pmod (send out color of vertex 1 and 2 of a triangle)
-    output logic [3:0] wait_ctr_out,
+//    output logic [3:0] wait_ctr_out,
+    
     output logic [3:0] spi_status_test,   // JC pmod 1-4
     output logic [3:0] error_status_test, // JC pmod 7-10
     output logic [3:0] ready_ctr_out,
@@ -62,16 +64,21 @@ module top_raster_system #(
     );
     
     logic rst_raster;
+    logic soft_reset;
+    logic soft_reset_sync_0;
+    logic soft_reset_sync_1;
     logic clk_locked_sync_raster;
     
     // 2-stage synchronization
     always_ff @(posedge clk_render) begin
         clk_locked_sync_raster <= clk_locked;
-        rst_raster <= (!clk_locked_sync_raster);
+        soft_reset_sync_0 <= soft_reset;
+        soft_reset_sync_1 <= soft_reset_sync_0;
     end
     
     logic rst_sck;
-    assign rst_sck = !rst_n;
+    assign rst_raster = !clk_locked_sync_raster || soft_reset_sync_1;
+    assign rst_sck    = !rst_n || soft_reset;
     
         // =========================================================
     // SPI clock synchronization and glitch filtering
@@ -209,6 +216,7 @@ module top_raster_system #(
         .spi_io(spi_io),
         .CS_n(CS_n),
         
+        .soft_reset(soft_reset),
         .sck_rise_pulse(sck_rise_pulse),
         .sck_fall_pulse(sck_fall_pulse),
 
@@ -240,8 +248,7 @@ module top_raster_system #(
         .spi_status_test(spi_status_test),
         .error_status_test(error_status_test),
         .ready_ctr_out(ready_ctr_out),
-        .CS_ready_out(CS_ready_out),
-        .wait_ctr_out(wait_ctr_out)
+        .CS_ready_out(CS_ready_out)
     );
     
 //    logic fifo_rst;
@@ -306,8 +313,11 @@ module top_raster_system #(
         .clk(clk_render),
         .rst_sck(rst_sck),
         .rst_raster(rst_raster),
-        .sck(sck),
+        .sck(clk_100m),
         .create_done(create_done),
+        
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse),
 
         .opcode_valid(opcode_valid),
         .opcode(opcode),
@@ -402,9 +412,9 @@ module top_raster_system #(
         .out_valid(model_world_valid),
         .out_ready(1'b1), //model_world_ready
         
-        .busy(transform_setup_busy)
+        .busy(transform_setup_busy),
         
-//        .red_1_2(red_1_2)
+        .red_1_2(red_1_2)
     );
     
     

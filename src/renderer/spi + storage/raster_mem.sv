@@ -25,6 +25,10 @@ module raster_mem #(
     input  logic rst_sck, rst_raster,
     input  logic sck,
     input  logic create_done,
+    
+    // Smooth clock flancs
+    input  logic sck_rise_pulse,
+    input  logic sck_fall_pulse,
 
     // SPI interface
     input  logic        opcode_valid,
@@ -178,7 +182,7 @@ module raster_mem #(
             vert_addr_wr <= 0; tri_addr_wr <= 0;
             inst_din <= 0;
             mem_state <= IDLE;
-        end else begin
+        end else if (sck_rise_pulse) begin
             if (opcode_valid) begin
                 unique case (opcode)
                     4'b0001: mem_state <= CREATE_VERT_HDR;
