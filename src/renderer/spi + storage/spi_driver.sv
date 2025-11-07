@@ -66,7 +66,8 @@ module spi_driver #(
     output logic [3:0] spi_status_test, // JC pmod 1-4
     output logic [3:0] error_status_test, // JC pmod 7-10
     output logic [3:0] ready_ctr_out,
-    output logic       CS_ready_out
+    output logic       CS_ready_out,
+    output logic [3:0] wait_ctr_out
     );
     
     // spi tri-state logic
@@ -218,7 +219,7 @@ module spi_driver #(
                             if(vert_ctr ==  vert_count-1) begin
                                 vert_ctr  <= 0;   
                                 read_done  <= 1;
-                                count_aligned <= vert_count[0];
+                                count_aligned <= !vert_count[0];
                                 spi_state <= CREATE_VERT_RESULT;   
                             end else if (vert_ctr >= MAX_VERT_CNT-1) begin
                                 error_status <= BUFFER_FULL;
@@ -270,7 +271,7 @@ module spi_driver #(
                             if (tri_ctr == tri_count-1) begin 
                                 tri_ctr   <= 0;
                                 read_done <= 1;
-                                count_aligned <= tri_count[0];
+                                count_aligned <= !tri_count[0];
                                 spi_state <= CREATE_TRI_RESULT;
                             end else if (tri_ctr >= MAX_TRI_CNT-1) begin
                                 error_status <= BUFFER_FULL;
@@ -296,9 +297,6 @@ module spi_driver #(
                             nbl_ctr <= nbl_ctr +1;
                         end else begin
                             tri_id_out <= {tri_id_out[3:0], spi_in};
-                            
-                            inst_id_out  <= next_inst_id;
-                            if(error_flag) next_inst_id <= next_inst_id + 1;
                             nbl_ctr      <= 0;
                             spi_state    <= CREATE_INST;
                             
@@ -310,6 +308,9 @@ module spi_driver #(
                                 error_status <= INVALID_ID;
                                 next_inst_id <= next_inst_id;
                                 error_flag   <= 1;
+                            end else if(!error_flag) begin
+                                next_inst_id <= next_inst_id + 1;
+                                inst_id_out  <= next_inst_id;
                             end
                         end
                     end
@@ -321,6 +322,7 @@ module spi_driver #(
                             nbl_ctr    <= 0;
                             
                             read_done  <= 1;
+                            count_aligned <= 0;
                             spi_state  <= CREATE_INST_RESULT;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
@@ -328,7 +330,13 @@ module spi_driver #(
                         end
                     end
                     LOAD_UPDATE_INST: begin
-                        if (nbl_ctr < 1) begin
+                        if (nbl_ctr < 2) begin
+                            vert_id_out <= {vert_id_out[3:0], spi_in};
+                            nbl_ctr <= nbl_ctr +1;
+                        end else if(nbl_ctr < 4) begin
+                            tri_id_out <= {tri_id_out[3:0], spi_in};
+                            nbl_ctr <= nbl_ctr +1;
+                        end else if (nbl_ctr == 4) begin
                             inst_id_out <= {inst_id_out[3:0], spi_in};
                             nbl_ctr     <= nbl_ctr +1;
                             
@@ -350,6 +358,7 @@ module spi_driver #(
                             
                             read_done   <= 1;
                             create_done <= 1;
+                            count_aligned <= 0;
                             spi_state   <= CREATE_NON_RESULT;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
@@ -360,6 +369,7 @@ module spi_driver #(
                     WIPE_ALL: begin
                         read_done   <= 1;
                         soft_reset  <= 1;
+                        count_aligned <= 1;
                         spi_state   <= CREATE_NON_RESULT;
                     end
 

@@ -64,15 +64,15 @@ module top_raster_system #(
         .clk_locked (clk_locked)
     );
     
-    logic rst;
-    logic [2:0] rst_ctr;
     logic rst_raster;
+    logic rst;
     logic soft_reset;
     logic reset_raster_sync_0;
     logic reset_raster_sync_1;
-    logic clk_locked_sync_raster;
-    logic reset_sck_sync;
+    logic [2:0] rst_ctr;
     logic rst_protect;
+    logic reset_sck_sync;
+    logic clk_locked_sync_raster;
     
     assign rst = !rst_n;
     // 2-stage synchronization
@@ -91,18 +91,22 @@ module top_raster_system #(
     always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
             rst_ctr <= 0;
+            rst_protect    <= 0;
             reset_sck_sync <= 0;
         end else begin 
-            if(rst_ctr == 2) begin
+            if (rst_ctr == 3) begin           // protect signal an extra cycle
+                rst_protect    <= 0;
                 rst_ctr        <= 0;
+            end else if(rst_ctr == 2) begin   // deasert the reset pulse
+                reset_sck_sync <= 0;
+                rst_ctr        <= rst_ctr +1;
+            end else if(rst_ctr == 1) begin   // system spi_driver ready to be reset
                 rst_protect    <= 1;
                 reset_sck_sync <= 1;
-            end else if(soft_reset) begin
                 rst_ctr        <= rst_ctr +1;
+            end else if(soft_reset) begin     // if soft reset, start counting
                 reset_sck_sync <= 0;
-            end else if(reset_sck_sync) begin 
-                reset_sck_sync <= 0;
-                rst_protect    <= 0;
+                rst_ctr        <= rst_ctr +1;
             end
         end
     end

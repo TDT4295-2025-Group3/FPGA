@@ -10,7 +10,7 @@ create_clock -period 10.0 [get_ports clk_100m] ; # 100 MHz
 ## Clock external (sclk)
 set_property PACKAGE_PIN F4 [get_ports sck] ; #IO_L13P_T2_MRCC_14 Sch=ck_io[33]
 set_property IOSTANDARD LVCMOS33 [get_ports sck]
-create_clock -period 100.0 [get_ports sck] ; # 10 MHz
+create_clock -period 1000.0 [get_ports sck] ; # 1 MHz
 
 # Ignore timing for specific async CDC paths from SPI driver to frame/raster logic
 set_false_path -from [get_pins u_spi_driver/max_inst_reg[0]/C] -to [get_pins u_frame_driver/max_inst_sync_0_reg[0]/D]

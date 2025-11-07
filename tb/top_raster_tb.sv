@@ -840,7 +840,37 @@ module tb_top_raster_system;
             // sin = (0, 0, 0)
             // cos = (1, 1, 1)
             spi_send_opcode(OP_UPDATE_INST);
+            repeat (2) spi_send_nybble(4'h0);   // vert_id (here free data)
+            repeat (2) spi_send_nybble(4'h0);   // tri_id  (here free data)
             repeat (2) spi_send_nybble(4'h0);   // inst 0 = camera
+            // Pos 32*3/4 = 24
+            repeat (24) spi_send_nybble(4'h0); 
+            // sin = 24
+            repeat (24) spi_send_nybble(4'h0); 
+            // cos_x 32/4 = 8
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            // cos_y
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            // cos_z
+            repeat (3) spi_send_nybble(4'h0); 
+            repeat (1) spi_send_nybble(4'h1);
+            repeat (4) spi_send_nybble(4'h0); 
+            // scale = 24
+            repeat (24) spi_send_nybble(4'h0);
+            // update inst doesn't really need this long of a wait
+            spi_return_result_non_aligned();
+            
+            
+            spi_send_opcode(OP_UPDATE_INST);
+            // hot swap instance 2 with buffers the buffers of inst 1
+            repeat (2) spi_send_nybble(4'h0);   // vert_id (here free data)
+            repeat (2) spi_send_nybble(4'h0);   // tri_id  (here free data)
+            repeat (1) spi_send_nybble(4'h0);   // 
+            repeat (1) spi_send_nybble(4'h2);   // inst_id 0
             // Pos 32*3/4 = 24
             repeat (24) spi_send_nybble(4'h0); 
             // sin = 24
@@ -868,7 +898,7 @@ module tb_top_raster_system;
             // Terminate the system
             spi_send_opcode(OP_WIPE_ALL);
             repeat (1) spi_send_nybble(4'hc);
-            spi_return_result_non_aligned();
+            spi_return_result_aligned();
             
         end
     endtask

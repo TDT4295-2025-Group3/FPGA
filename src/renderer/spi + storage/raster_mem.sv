@@ -234,7 +234,7 @@ module raster_mem #(
                     mem_state <= IDLE;
                 end
                 UPDATE_INST: if (inst_valid) begin
-                    inst_din <= {transform_in, inst_dout_a[15:0]};
+                    inst_din <= {transform_in, vert_id_in, tri_id_in};
                     inst_we  <= 1;
                     mem_state <= IDLE;
                 end
