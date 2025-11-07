@@ -10,6 +10,7 @@ module top_raster_system #(
     parameter MAX_VERT  = 8192,     // 2^13 bit = 8192, 
     parameter MAX_TRI   = 8192,     // 2^13 bit = 8192,
     parameter MAX_INST  = 256,      // maximum instences
+    parameter SCK_FILTER    = 50,    // Min filter period for edge detection, we want n_max = T_raw/(2*T_ref)
     localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
     localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
     localparam MAX_VERT_CNT = 4096,  // max vertices per buffer
@@ -30,10 +31,9 @@ module top_raster_system #(
     inout  logic [3:0] spi_io,   // SPI inputs
     
     // JB pmod
-    output logic [7:0] red_1_2,   // JB pmod (send out color of vertex 1 and 2 of a triangle)
-//    output logic [ID_W-1:0] tri_id_out,
-//    output logic [3:0] wait_ctr_out,
-    
+//    output logic [7:0] red_1_2,   // JB pmod (send out color of vertex 1 and 2 of a triangle)
+    output logic [3:0] wait_ctr_out,
+    output logic [3:0] ctr_test,
     output logic [3:0] spi_status_test,   // JC pmod 1-4
     output logic [3:0] error_status_test, // JC pmod 7-10
     output logic [3:0] ready_ctr_out,
@@ -44,6 +44,7 @@ module top_raster_system #(
     output logic output_bit,
     output logic rst_test_LED
 );
+    logic [3:0] red_1_2;
     assign rst_test_LED = rst_n;
     
     // ----------------------------------------------------------------
@@ -63,22 +64,53 @@ module top_raster_system #(
         .clk_locked (clk_locked)
     );
     
+    logic rst;
+    logic [2:0] rst_ctr;
     logic rst_raster;
     logic soft_reset;
-    logic soft_reset_sync_0;
-    logic soft_reset_sync_1;
+    logic reset_raster_sync_0;
+    logic reset_raster_sync_1;
     logic clk_locked_sync_raster;
+    logic reset_sck_sync;
+    logic rst_protect;
     
+    assign rst = !rst_n;
     // 2-stage synchronization
-    always_ff @(posedge clk_render) begin
-        clk_locked_sync_raster <= clk_locked;
-        soft_reset_sync_0 <= soft_reset;
-        soft_reset_sync_1 <= soft_reset_sync_0;
+    always_ff @(posedge clk_render or posedge rst) begin
+        if(rst) begin
+            reset_raster_sync_0 <= 0;
+            reset_raster_sync_1 <= 0;
+        end else begin
+            clk_locked_sync_raster <= clk_locked;
+            reset_raster_sync_0 <= soft_reset;
+            reset_raster_sync_1 <= reset_raster_sync_0;
+        end
+    end
+    
+    // Sck reset pulse with protection flag needed for state
+    always_ff @(posedge sck or posedge rst) begin
+        if(rst) begin
+            rst_ctr <= 0;
+            reset_sck_sync <= 0;
+        end else begin 
+            if(rst_ctr == 2) begin
+                rst_ctr        <= 0;
+                rst_protect    <= 1;
+                reset_sck_sync <= 1;
+            end else if(soft_reset) begin
+                rst_ctr        <= rst_ctr +1;
+                reset_sck_sync <= 0;
+            end else if(reset_sck_sync) begin 
+                reset_sck_sync <= 0;
+                rst_protect    <= 0;
+            end
+        end
     end
     
     logic rst_sck;
-    assign rst_raster = !clk_locked_sync_raster || soft_reset_sync_1;
-    assign rst_sck    = !rst_n || soft_reset;
+    assign rst_raster = !clk_locked_sync_raster || reset_raster_sync_1;
+    assign rst_sck    = rst || reset_sck_sync;
+    assign rst_wipe   = rst && !reset_sck_sync;
     
         // =========================================================
     // SPI clock synchronization and glitch filtering
@@ -88,7 +120,7 @@ module top_raster_system #(
     logic sck_fall_pulse;
 
     spi_sck_sync #(
-        .MIN_PERIOD_CYCLES(23)   // // we want a min period of n_max = T_raw/(2*T_ref)
+        .MIN_PERIOD_CYCLES(SCK_FILTER)   // we want a min period of n_max = T_raw/(2*T_ref)
     ) u_spi_sck_sync (
         .clk_ref(clk_100m),     // reference clock (100 MHz domain)
         .rst_n(rst_n),
@@ -103,7 +135,11 @@ module top_raster_system #(
     always_ff @(posedge clk_100m or posedge rst_sck) begin 
         if(rst_sck) begin 
             sck_toggle <= 0;
-        end else if(sck_rise_pulse || sck_fall_pulse) begin
+            ctr_test   <= 0;
+        end else if(sck_rise_pulse) begin
+            sck_toggle <= !sck_toggle;
+            ctr_test <= ctr_test +1;
+        end else if(sck_fall_pulse) begin
             sck_toggle <= !sck_toggle;
         end
     end
@@ -213,6 +249,7 @@ module top_raster_system #(
     ) u_spi_driver (
         .sck(clk_100m),
         .rst(rst_sck),
+        .rst_protect(rst_protect),
         .spi_io(spi_io),
         .CS_n(CS_n),
         

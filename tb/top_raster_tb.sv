@@ -13,6 +13,7 @@ module tb_top_raster_system;
     localparam MAX_VERT  = 256;
     localparam MAX_TRI   = 256;
     localparam MAX_INST  = 256;
+    localparam SCK_FILTER   = 15;    // Min filter period for edge detection, we want n_max = T_raw/(2*T_ref)
 //    localparam MAX_VERT_BUF = 256;
 //    localparam MAX_TRI_BUF  = 256;
 //    localparam MAX_VERT_CNT = 4096;  // max vertices per buffer  
@@ -49,7 +50,8 @@ module tb_top_raster_system;
     top_raster_system #(
         .MAX_VERT(MAX_VERT),
         .MAX_TRI(MAX_TRI),
-        .MAX_INST(MAX_INST)
+        .MAX_INST(MAX_INST),
+        .SCK_FILTER(SCK_FILTER)
     ) dut (
         .clk_100m(clk_100m),
         .sck(sck),
@@ -57,11 +59,6 @@ module tb_top_raster_system;
         .CS_n(CS_n),
         .spi_io(spi_io),
         
-        .red_1_2(red_1_2),
-//        .wait_ctr_out(wait_ctr_out),
-//        .tri_id_out(tri_id_out),
-        .spi_status_test(spi_status_test),
-        .error_status_test(error_status_test),
         .output_bit(output_bit)
     );
 
@@ -90,7 +87,7 @@ module tb_top_raster_system;
         spi_drive = 0;
         #20; 
         rst_n = 0;
-        #20;
+        #300;
         rst_n = 1;
         #8000; // wait for clock lock
         sck = 0;
@@ -124,19 +121,19 @@ module tb_top_raster_system;
         end
     endtask
     
-    task spi_return_result();
+    task spi_return_result_aligned();
         // wait for post junk data after read
         // here i will wait with wait_ctr
         repeat (1) @(negedge sck);
         spi_de = 0;
-        repeat (3) @(posedge sck);
+        repeat (2) @(posedge sck); // 2 cycle buffer 
         #50
         sck_en = 0;
         sck    = 0;
         #100 // is this waiting included in  @(posedge sck_en);?
         CS_n = 1;
         // mcu is now finished with writing to the FPGA
-        #500 // the time break between the mcu being ready to recieve data
+        #1000 // the time break between the mcu being ready to recieve data
         
         // start the proccess of sending back data
         CS_n = 0;
@@ -159,26 +156,32 @@ module tb_top_raster_system;
         CS_n = 1;
     endtask
     
-    task spi_return_status();
+    task spi_return_result_non_aligned();
+        // wait for post junk data after read
+        // here i will wait with wait_ctr
         repeat (1) @(negedge sck);
         spi_de = 0;
-        repeat (3) @(posedge sck);
+        repeat (3) @(posedge sck); // 2 cycle buffer + non-aligned nybble
         #50
         sck_en = 0;
         sck    = 0;
         #100 // is this waiting included in  @(posedge sck_en);?
         CS_n = 1;
         // mcu is now finished with writing to the FPGA
-        #500 // the time break between the mcu being ready to recieve data
+        #1000 // the time break between the mcu being ready to recieve data
         
         // start the proccess of sending back data
         CS_n = 0;
         #100
         sck_en = 1;
+        spi_de = 1;
         // Junk data (ready_ctr incrementing here)
-        repeat (7) spi_send_nybble(4'b110);
-        // status output +1: 1 cycle output
-        repeat (1) @(posedge sck);
+        repeat (7) spi_send_nybble(4'b1100);
+        // Two padding nybbles for the spi pins to stabalise (idc just works better)
+        repeat (2) spi_send_nybble(4'b0000);
+        spi_de = 0;
+        // id +2, status output +1: 3 cycles output
+        repeat (3) @(posedge sck);
         // post junk data after writeback
         repeat (3) @(posedge sck);
         sck_en = 0;
@@ -187,6 +190,35 @@ module tb_top_raster_system;
         #100
         CS_n = 1;
     endtask
+    
+//    task spi_return_status();
+//        repeat (1) @(negedge sck);
+//        spi_de = 0;
+//        repeat (3) @(posedge sck);
+//        #50
+//        sck_en = 0;
+//        sck    = 0;
+//        #100 // is this waiting included in  @(posedge sck_en);?
+//        CS_n = 1;
+//        // mcu is now finished with writing to the FPGA
+//        #500 // the time break between the mcu being ready to recieve data
+        
+//        // start the proccess of sending back data
+//        CS_n = 0;
+//        #100
+//        sck_en = 1;
+//        // Junk data (ready_ctr incrementing here)
+//        repeat (7) spi_send_nybble(4'b110);
+//        // status output +1: 1 cycle output
+//        repeat (1) @(posedge sck);
+//        // post junk data after writeback
+//        repeat (3) @(posedge sck);
+//        sck_en = 0;
+//        #50
+//        sck    = 0;
+//        #100
+//        CS_n = 1;
+//    endtask
 
     // === Example SPI sequence ===
     task run_sequence();
@@ -236,7 +268,7 @@ module tb_top_raster_system;
 //            repeat (1) spi_send_nybble(4'h1);
 //            repeat (4) spi_send_nybble(0);
 //            repeat (3) spi_send_nybble(4'hE);
-            spi_return_result();
+            spi_return_result_aligned();
             
             // CREATE_VERT 2
             spi_send_opcode(OP_CREATE_VERT);
@@ -263,7 +295,7 @@ module tb_top_raster_system;
             repeat (1) spi_send_nybble(4'hC);
             repeat (4) spi_send_nybble(0);
             repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();     
+            spi_return_result_non_aligned();     
             
             // CREATE_VERT 3
             spi_send_opcode(OP_CREATE_VERT);
@@ -290,7 +322,7 @@ module tb_top_raster_system;
             repeat (1) spi_send_nybble(4'hC);
             repeat (4) spi_send_nybble(0);
             repeat (3) spi_send_nybble(4'h3);
-            spi_return_result();   
+            spi_return_result_non_aligned();   
             
 //            // CREATE_VERT 4
 //            spi_send_opcode(OP_CREATE_VERT);
@@ -707,7 +739,7 @@ module tb_top_raster_system;
 //            spi_send_nybble(4'h0);
 //            spi_send_nybble(4'h4); // vert 4
             // finish Sending tri data
-            spi_return_result();           
+            spi_return_result_non_aligned();           
             
             // CREATE_TRI 2
             // send tri count
@@ -725,7 +757,7 @@ module tb_top_raster_system;
             spi_send_nybble(4'h0);
             spi_send_nybble(4'h0);
             spi_send_nybble(4'h0); // vert 2   
-            spi_return_result();            
+            spi_return_result_non_aligned();            
             
             // CREATE_INST 1 test
             spi_send_opcode(OP_CREATE_INST);
@@ -762,7 +794,7 @@ module tb_top_raster_system;
             repeat (3) spi_send_nybble(4'h0); 
             repeat (1) spi_send_nybble(4'h3);
             repeat (4) spi_send_nybble(4'h0); 
-            spi_return_result();       
+            spi_return_result_non_aligned();       
             
             
            // CREATE_INST 2
@@ -800,7 +832,7 @@ module tb_top_raster_system;
             repeat (3) spi_send_nybble(4'h0); 
             repeat (1) spi_send_nybble(4'h3);
             repeat (4) spi_send_nybble(4'h0); 
-            spi_return_result();
+            spi_return_result_non_aligned();
             
             // Update camera transform to no rotation 
             // q16_16 numbers
@@ -828,14 +860,15 @@ module tb_top_raster_system;
             // scale = 24
             repeat (24) spi_send_nybble(4'h0);
             // update inst doesn't really need this long of a wait
-            spi_return_status();
+            spi_return_result_non_aligned();
             
             // wait for frame driver send data down the pipeline
             #6000
             
             // Terminate the system
             spi_send_opcode(OP_WIPE_ALL);
-            spi_return_status();
+            repeat (1) spi_send_nybble(4'hc);
+            spi_return_result_non_aligned();
             
         end
     endtask
