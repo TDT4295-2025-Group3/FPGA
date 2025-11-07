@@ -77,17 +77,21 @@ module raster_mem #(
     logic [VERT_ADDR_W-1:0] vert_addr_wr;
     logic [VTX_W-1:0]       vert_din, vert_out_r;
     logic                   vert_we;
+    logic                   vert_rise_we;
 
     logic [TRI_ADDR_W-1:0] tri_addr_wr;
     logic [TRI_W-1:0]      tri_din, tri_out_r;
     logic                  tri_we;
+    logic                  tri_rise_we;
 
+    assign vert_rise_we = vert_we && sck_rise_pulse;
+    assign tri_rise_we  = tri_we  && sck_rise_pulse;
     (* ram_style = "block" *) logic [VTX_W-1:0] vertex_ram [0:MAX_VERT-1];
     (* ram_style = "block" *) logic [TRI_W-1:0]  tri_ram    [0:MAX_TRI-1];
 
     always_ff @(posedge sck) begin
-        if (vert_we) vertex_ram[vert_addr_wr] <= vert_din;
-        if (tri_we)  tri_ram[tri_addr_wr]   <= tri_din;
+        if (vert_rise_we) vertex_ram[vert_addr_wr] <= vert_din;
+        if (tri_rise_we)  tri_ram[tri_addr_wr]   <= tri_din;
     end
 
     always_ff @(posedge clk) begin
@@ -99,9 +103,12 @@ module raster_mem #(
     // Instance RAM (dual-port XPM)
     // =============================================
     logic inst_we;
+    logic inst_edge_we;
     logic [INST_W-1:0] inst_din;
     logic [INST_W-1:0] inst_dout_r;
     logic [INST_W-1:0] inst_dout_a;
+    
+    assign inst_edge_we = inst_we && sck_rise_pulse;
 
     xpm_memory_tdpram #(
         .MEMORY_SIZE        (MAX_INST * INST_W),
@@ -122,7 +129,7 @@ module raster_mem #(
         .clka   (sck),
         .rsta   (rst_sck),
         .ena    (1'b1),
-        .wea    (inst_we),
+        .wea    (inst_edge_we),
         .addra  (inst_id_in),
         .dina   (inst_din),
         .douta  (inst_dout_a),

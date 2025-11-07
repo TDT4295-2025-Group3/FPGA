@@ -30,28 +30,24 @@ module top_raster_system #(
     input  logic CS_n,           // chip select
     inout  logic [3:0] spi_io,   // SPI inputs
     
-    // JB pmod
-//    output logic [7:0] red_1_2,   // JB pmod (send out color of vertex 1 and 2 of a triangle)
-    output logic [3:0] wait_ctr_out,
-    output logic [3:0] ctr_test,
-    output logic [3:0] spi_status_test,   // JC pmod 1-4
-    output logic [3:0] error_status_test, // JC pmod 7-10
-    output logic [3:0] ready_ctr_out,
-    output logic       CS_ready_out,
-    output logic       sck_toggle,
+    // Pmod B-D
+    output logic [7:0] red_1_2,   // JB pmod (send out color of vertex 1 and 2 of a triangle)
+    output logic [3:0] red_3,
+    output logic [7:0] inst_id_rd_out,
+    
+    
     
     // LEDs
     output logic output_bit,
     output logic rst_test_LED
 );
-    logic [3:0] red_1_2;
+//    logic [3:0] red_1_2;
     assign rst_test_LED = rst_n;
     
     // ----------------------------------------------------------------
     // Clocks
     // ----------------------------------------------------------------
     logic sck_backup;
-//    logic sck;
     logic sck_no_use;
     logic clk_render;
     logic clk_locked;
@@ -133,21 +129,7 @@ module top_raster_system #(
         .sck_rise_pulse(sck_rise_pulse),
         .sck_fall_pulse(sck_fall_pulse)
     );
-
     
-    // test section
-    always_ff @(posedge clk_100m or posedge rst_sck) begin 
-        if(rst_sck) begin 
-            sck_toggle <= 0;
-            ctr_test   <= 0;
-        end else if(sck_rise_pulse) begin
-            sck_toggle <= !sck_toggle;
-            ctr_test <= ctr_test +1;
-        end else if(sck_fall_pulse) begin
-            sck_toggle <= !sck_toggle;
-        end
-    end
-        
     // =============================
     // Internal signals
     // =============================
@@ -212,25 +194,6 @@ module top_raster_system #(
     logic model_world_ready; 
     logic transform_setup_busy;
     
-    
-//    // model/world ↔ world/camera
-//    triangle_t  world_triangle;
-//    logic world_valid;
-//    logic camera_ready;
-//    logic world_busy;
-    
-//    // world/camera ↔ triangle project
-//    triangle_t camera_triangle;
-//    logic camera_valid;
-//    logic project_ready;
-//    logic camera_busy;
-    
-//    // triangle project ↔ rasterdizer stuff
-//    triangle_t project_triangle;
-//    logic project_valid;
-//    logic resterdizer_ready = 1;
-//    logic project_busy;
-
     // =============================
     // SPI front-end
     // =============================
@@ -284,55 +247,9 @@ module top_raster_system #(
         .inst_id_out(inst_id_out),
         
         .max_inst(max_inst),
-        .create_done(create_done),
-        
-        .spi_status_test(spi_status_test),
-        .error_status_test(error_status_test),
-        .ready_ctr_out(ready_ctr_out),
-        .CS_ready_out(CS_ready_out)
+        .create_done(create_done)
     );
     
-//    logic fifo_rst;
-//    logic fifo_emty;
-//    assign fifo_rst = rst_sck | rst_raster;
-
-//    xpm_fifo_async #(
-//        .FIFO_MEMORY_TYPE   ("auto"),
-//        .FIFO_WRITE_DEPTH   (16),
-//        .WRITE_DATA_WIDTH   (9),
-//        .READ_DATA_WIDTH    (9),
-//        .READ_MODE          ("fwft"),
-//        .CDC_SYNC_STAGES    (2)
-//    ) cdc_fifo_inst (
-//        // write domain
-//        .wr_clk   (sck),
-//        .wr_en    (create_done),
-//        .din      ({create_done, max_inst}),
-//        .full     (),               // not used
-    
-//        // read domain
-//        .rd_clk   (clk_raster),
-//        .rd_en    (1'b0),
-//        .dout     ({create_done_sync, max_inst_sync}),
-//        .empty    (fifo_emty),
-    
-//        // status/reset
-//        .rst      (fifo_rst),
-    
-//        // optional outputs (left unconnected)
-//        .wr_data_count (),
-//        .rd_data_count (),
-//        .prog_full     (),
-//        .prog_empty    (),
-//        .overflow      (),
-//        .underflow     (),
-//        .almost_full   (),
-//        .almost_empty  (),
-//        .data_valid    (),
-//        .sleep         (1'b0)
-//    );
-
-
     // =============================
     // Raster memory
     // =============================
@@ -437,7 +354,11 @@ module top_raster_system #(
         // Frame driver ↔ razter/system
         .draw_done(feed_done),
         .busy(frame_driver_busy),
-        .draw_start(1'b1) //draw_start
+        .draw_start(1'b1), //draw_start
+        
+        
+        .red_1_2(red_1_2),
+        .red_3(red_3)
     );
     
     transform_setup 
@@ -453,65 +374,11 @@ module top_raster_system #(
         .out_valid(model_world_valid),
         .out_ready(1'b1), //model_world_ready
         
-        .busy(transform_setup_busy),
-        
-        .red_1_2(red_1_2)
+        .busy(transform_setup_busy)
     );
     
+    assign inst_id_rd_out = inst_id_rd[3:0];
     
-//    model_world_transformer
-//        u_model_world_transformer (
-//        .clk(clk_render),
-//        .rst(rst),
-//        .camera_transform_valid(camera_transform_valid),
-        
-//        // communication with frame driver
-//        .transform(transform_out),
-//        .triangle(world_tri_out),
-//        .in_valid(frame_driver_valid),
-//        .in_ready(world_ready),
-        
-//        // communication with world to camera
-//        .out_triangle(world_triangle),
-//        .out_valid(world_valid),
-//        .out_ready(camera_ready),
-//        .busy(world_busy)
-//    );
-
-//    world_camera_transformer 
-//        u_world_camera_transformer (
-//        .clk_render(clk_render),
-//        .rst(rst),
-        
-//        .triangle(world_triangle),
-//        .in_valid(world_valid),
-//        .in_ready(camera_ready),
-        
-//        .out_triangle(camera_triangle),
-//        .out_valid(camera_valid),
-//        .out_ready(project_ready),
-//        .busy(camera_busy)
-//    );  
-        
-//    triangle_projector 
-//        u_trangle_projector (
-//        .clk_render(clk_render),
-//        .rst(rst),
-        
-//        .triangle(camera_triangle),
-//        .in_valid(camera_valid),
-//        .in_ready(project_ready),
-        
-//        .focal_length(focal_length),
-        
-//        .out_triangle(project_triangle),
-//        .out_valid(project_valid),
-//        .out_ready(1'b1),
-//        .busy(project_busy)
-//    );
-    
-//    assign tri_id  = tri_id_out[7:0];
-//    assign vert_id = vert_id_out[7:0];
     always @(posedge clk_render) begin
         if(|out_model_world)
             output_bit <= 1;

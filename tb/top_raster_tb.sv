@@ -70,7 +70,7 @@ module tb_top_raster_system;
     initial sck_en = 0;
     always begin
         if (sck_en) begin
-            #250; // 10MHz:100ns, 2MHz: 500ns 
+            #2000; // 10MHz:100ns, 2MHz: 500ns , 250kHz: 4000ns
             if (sck_en)
                 sck = ~sck;
         end else begin

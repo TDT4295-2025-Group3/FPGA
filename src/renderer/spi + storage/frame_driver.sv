@@ -45,11 +45,13 @@ module frame_driver #(
     input  logic draw_start,
     output logic draw_done,   // All instances done
     
-    output logic busy
+    output logic busy,
+    
+    output logic [7:0]      red_1_2,
+    output logic [3:0]      red_3
     
 );
     // Internal registers
-    logic [VIDX_W-1:0] vert_ctr;
     logic [TIDX_W-1:0] tri_ctr;
     logic [ID_W-1:0] next_inst_id;
     logic [1:0] wait_ctr;
@@ -73,8 +75,7 @@ module frame_driver #(
     end
 
     logic [TRI_W-1:0] idx_tri_reg;
-    vertex_t v_collect[0:2];
-    triangle_t tri_r;
+    triangle_t t_collect;
     transform_setup_t transform_setup_r;
     
     // FSM
@@ -99,9 +100,7 @@ module frame_driver #(
             frame_state   <= IDLE;
             tri_ctr       <= '0;
             idx_tri_reg   <= '0;
-            v_collect[0]  <= '0;
-            v_collect[1]  <= '0;
-            v_collect[2]  <= '0;
+            t_collect     <= '0;
             out_valid     <= '0;
             tri_addr      <= '0;
             vert_addr     <= '0;
@@ -165,18 +164,18 @@ module frame_driver #(
                 end
 
                 CAPTURE_V0: begin
-                    v_collect[0] <= vert_in;
+                    t_collect.v0 <= vert_in;
                     frame_state <= CAPTURE_V1;
                     vert_addr <= curr_vert_base + idx_tri_reg[VIDX_W-1:0]; // request v2
                 end
 
                 CAPTURE_V1: begin
-                    v_collect[1] <= vert_in;
+                    t_collect.v1 <= vert_in;
                     frame_state <= CAPTURE_V2;
                 end
 
                 CAPTURE_V2: begin
-                    v_collect[2] <= vert_in;
+                    t_collect.v2 <= vert_in;
                     frame_state <= OUTPUT_TRI;
                 end
 
@@ -189,9 +188,7 @@ module frame_driver #(
                         if(max_inst_sync == 0)
                             next_inst_id <= 0;
                     end else if (inst_id_rd != 0 && out_ready) begin
-                        transform_setup_r.triangle.v0 <= v_collect[0];
-                        transform_setup_r.triangle.v1 <= v_collect[1];
-                        transform_setup_r.triangle.v2 <= v_collect[2]; 
+                        transform_setup_r.triangle <= t_collect;
                         transform_setup_r.model_transform <= transform_in;
                         transform_setup_r.model_transform_valid <= 1;
                         out_valid <= 1;
@@ -222,7 +219,10 @@ module frame_driver #(
         end
     end
 
-    assign tri_out = tri_r;
     assign transform_setup = transform_setup_r;
+    // slice the red of vertex 0 and 1
+    assign red_1_2 = {t_collect.v0.color[11:8], t_collect.v1.color[11:8]};
+    assign red_3   =  t_collect.v2.color[11:8];
+    
 
 endmodule
