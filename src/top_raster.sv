@@ -7,19 +7,21 @@ import vertex_pkg::*;
 import transformer_pkg::*;
 
 module top_raster_system #(
-    parameter MAX_VERT  = 256,     // 2^13 bit = 8192, 
-    parameter MAX_TRI   = 256,     // 2^13 bit = 8192,
+    parameter MAX_VERT  = 8192,     // 2^13 bit = 8192, 
+    parameter MAX_TRI   = 8192,     // 2^13 bit = 8192,
     parameter MAX_INST  = 256,      // maximum instences
-    parameter MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
-    parameter MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
-    parameter MAX_VERT_CNT = 4096,  // max vertices per buffer
-    parameter MAX_TRI_CNT  = 4096,  // max triangles per buffer
-    parameter VTX_W     = 108,
-    parameter VIDX_W    = $clog2(MAX_VERT_CNT),
-    parameter TIDX_W    = $clog2(MAX_TRI_CNT),
-    parameter TRI_W     = 3*VIDX_W,
-    parameter DATA_W    = 32,
-    parameter TRANS_W   = DATA_W * 12
+    parameter SCK_FILTER    = 50,    // Min filter period for edge detection, we want n_max = T_raw/(2*T_ref)
+    localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
+    localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
+    localparam MAX_VERT_CNT = 4096,  // max vertices per buffer
+    localparam MAX_TRI_CNT  = 4096,  // max triangles per buffer
+    localparam VTX_W     = 108,
+    localparam VIDX_W    = $clog2(MAX_VERT_CNT),
+    localparam TIDX_W    = $clog2(MAX_TRI_CNT),
+    localparam TRI_W     = 3*VIDX_W,
+    localparam ID_W      = 8,
+    localparam DATA_W    = 32,
+    localparam TRANS_W   = DATA_W * 12
 )(
     // === External signals ===
     input  logic clk_100m,       // raster clock
@@ -28,28 +30,24 @@ module top_raster_system #(
     input  logic CS_n,           // chip select
     inout  logic [3:0] spi_io,   // SPI inputs
     
-    output logic [7:0] vert_id,  // JB pmod
-    output logic [3:0] spi_status_test,   // JC pmod 1-4
-    output logic [3:0] error_status_test, // JC pmod 7-10
-    output logic [3:0] ready_ctr_out,
-    output logic       CS_ready_out,
+    // Pmod B-D
+    output logic [7:0] red_1_2,   // JB pmod (send out color of vertex 1 and 2 of a triangle)
+    output logic [3:0] red_3,
+    output logic [7:0] inst_id_rd_out,
     
-    // JD
-//    output logic rst_sck_out,
-//    output logic clk_locked_out,
-//    output logic sck_out,
+    
     
     // LEDs
     output logic output_bit,
     output logic rst_test_LED
 );
-    assign rst_test = rst_n;
+//    logic [3:0] red_1_2;
     assign rst_test_LED = rst_n;
+    
     // ----------------------------------------------------------------
     // Clocks
     // ----------------------------------------------------------------
     logic sck_backup;
-//    logic sck;
     logic sck_no_use;
     logic clk_render;
     logic clk_locked;
@@ -63,21 +61,75 @@ module top_raster_system #(
     );
     
     logic rst_raster;
+    logic rst;
+    logic soft_reset;
+    logic reset_raster_sync_0;
+    logic reset_raster_sync_1;
+    logic [2:0] rst_ctr;
+    logic rst_protect;
+    logic reset_sck_sync;
     logic clk_locked_sync_raster;
     
+    assign rst = !rst_n;
     // 2-stage synchronization
-    always_ff @(posedge clk_render) begin
-        clk_locked_sync_raster <= clk_locked;
-        rst_raster <= (!clk_locked_sync_raster);
+    always_ff @(posedge clk_render or posedge rst) begin
+        if(rst) begin
+            reset_raster_sync_0 <= 0;
+            reset_raster_sync_1 <= 0;
+        end else begin
+            clk_locked_sync_raster <= clk_locked;
+            reset_raster_sync_0 <= soft_reset;
+            reset_raster_sync_1 <= reset_raster_sync_0;
+        end
+    end
+    
+    // Sck reset pulse with protection flag needed for state
+    always_ff @(posedge sck or posedge rst) begin
+        if(rst) begin
+            rst_ctr <= 0;
+            rst_protect    <= 0;
+            reset_sck_sync <= 0;
+        end else begin 
+            if (rst_ctr == 3) begin           // protect signal an extra cycle
+                rst_protect    <= 0;
+                rst_ctr        <= 0;
+            end else if(rst_ctr == 2) begin   // deasert the reset pulse
+                reset_sck_sync <= 0;
+                rst_ctr        <= rst_ctr +1;
+            end else if(rst_ctr == 1) begin   // system spi_driver ready to be reset
+                rst_protect    <= 1;
+                reset_sck_sync <= 1;
+                rst_ctr        <= rst_ctr +1;
+            end else if(soft_reset) begin     // if soft reset, start counting
+                reset_sck_sync <= 0;
+                rst_ctr        <= rst_ctr +1;
+            end
+        end
     end
     
     logic rst_sck;
-    assign rst_sck = !rst_n;
-        
-//    assign rst_sck_out = rst_sck;
-    assign clk_locked_out = clk_locked;
-//    assign sck_out = sck;
-        
+    assign rst_raster = !clk_locked_sync_raster || reset_raster_sync_1;
+    assign rst_sck    = rst || reset_sck_sync;
+    assign rst_wipe   = rst && !reset_sck_sync;
+    
+        // =========================================================
+    // SPI clock synchronization and glitch filtering
+    // =========================================================
+    logic sck_sync_level;
+    logic sck_rise_pulse;
+    logic sck_fall_pulse;
+
+    spi_sck_sync #(
+        .MIN_PERIOD_CYCLES(SCK_FILTER)   // we want a min period of n_max = T_raw/(2*T_ref)
+    ) u_spi_sck_sync (
+        .clk_ref(clk_100m),     // reference clock (100 MHz domain)
+        .rst_n(rst_n),
+        .sck_raw(sck),          // raw external SCK input
+        .sck_level(sck_sync_level), // stable version of SCK (optional use)
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse)
+    );
+    
     // =============================
     // Internal signals
     // =============================
@@ -100,10 +152,10 @@ module top_raster_system #(
     logic [TIDX_W-1:0] tri_count;
 
     logic        inst_valid, inst_id_valid;
-    logic [VIDX_W-1:0] vert_id_out;
-    logic [TIDX_W-1:0] tri_id_out;
+    logic [ID_W-1:0] vert_id_out;
+    logic [ID_W-1:0] tri_id_out;
+    logic [ID_W-1:0] inst_id_out;
     logic [TRANS_W-1:0] transform_out_spi;
-    logic [7:0] inst_id_out;
     logic [3:0] status;
     
     // spi frame ↔ driver
@@ -142,25 +194,6 @@ module top_raster_system #(
     logic model_world_ready; 
     logic transform_setup_busy;
     
-    
-//    // model/world ↔ world/camera
-//    triangle_t  world_triangle;
-//    logic world_valid;
-//    logic camera_ready;
-//    logic world_busy;
-    
-//    // world/camera ↔ triangle project
-//    triangle_t camera_triangle;
-//    logic camera_valid;
-//    logic project_ready;
-//    logic camera_busy;
-    
-//    // triangle project ↔ rasterdizer stuff
-//    triangle_t project_triangle;
-//    logic project_valid;
-//    logic resterdizer_ready = 1;
-//    logic project_busy;
-
     // =============================
     // SPI front-end
     // =============================
@@ -177,13 +210,19 @@ module top_raster_system #(
         .VIDX_W(VIDX_W),
         .TIDX_W(TIDX_W),
         .TRI_W(TRI_W),
+        .ID_W(ID_W),
         .DATA_W(DATA_W),
         .TRANS_W(TRANS_W)
     ) u_spi_driver (
-        .sck(sck),
+        .sck(clk_100m),
         .rst(rst_sck),
+        .rst_protect(rst_protect),
         .spi_io(spi_io),
         .CS_n(CS_n),
+        
+        .soft_reset(soft_reset),
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse),
 
         .opcode_valid(opcode_valid),
         .opcode(opcode),
@@ -208,43 +247,9 @@ module top_raster_system #(
         .inst_id_out(inst_id_out),
         
         .max_inst(max_inst),
-        .create_done(create_done),
-        
-        .spi_status_test(spi_status_test),
-        .error_status_test(error_status_test),
-        .ready_ctr_out(ready_ctr_out),
-        .CS_ready_out(CS_ready_out)
+        .create_done(create_done)
     );
     
-//    // Simple FIFO to transfer signal from clock domains sck to clk_raster
-//    xpm_fifo_async #(
-//        .FIFO_MEMORY_TYPE   ("auto"),
-//        .FIFO_WRITE_DEPTH   (16), // 16 is minimum supported depth
-//        .WRITE_DATA_WIDTH   (9),  // 8 bits for max_inst + 1 bit for create_done
-//        .READ_DATA_WIDTH    (9),
-//        .RD_DATA_COUNT_WIDTH(2),
-//        .WR_DATA_COUNT_WIDTH(2),
-//        .READ_MODE          ("fwft"), // first-word fall-through
-//        .CDC_SYNC_STAGES    (2)
-//    ) cdc_fifo_inst (
-//        // write domain (sck)
-//        .wr_clk   (sck),
-//        .wr_en    (create_done),     // push data when done
-//        .din      ({create_done, max_inst}), // pack signals together
-//        .full     (fifo_full),
-//        .overflow (fifo_overflow),
-    
-//        // read domain (clk)
-//        .rd_clk   (clk),
-//        .rd_en    (1'b1),      // you control when to pop (one per frame)
-//        .dout     ({create_done_sync, max_inst_sync}),
-//        .empty    (fifo_empty),
-//        .underflow(fifo_underflow),
-    
-//        // resets
-//        .rst      (rst_raster)
-//    );
-
     // =============================
     // Raster memory
     // =============================
@@ -259,14 +264,18 @@ module top_raster_system #(
         .VIDX_W(VIDX_W),
         .TIDX_W(TIDX_W),
         .TRI_W(TRI_W),
+        .ID_W(ID_W),
         .DATA_W(DATA_W),
         .TRANS_W(TRANS_W)
     ) u_raster_mem (
         .clk(clk_render),
         .rst_sck(rst_sck),
         .rst_raster(rst_raster),
-        .sck(sck),
+        .sck(clk_100m),
         .create_done(create_done),
+        
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse),
 
         .opcode_valid(opcode_valid),
         .opcode(opcode),
@@ -315,7 +324,8 @@ module top_raster_system #(
         .VTX_W(VTX_W),
         .VIDX_W(VIDX_W),
         .TIDX_W(TIDX_W),
-        .TRI_W(TRI_W)
+        .TRI_W(TRI_W),
+        .ID_W(ID_W)
     ) u_frame_driver (
         .clk(clk_render),
         .rst(rst_raster),
@@ -344,7 +354,11 @@ module top_raster_system #(
         // Frame driver ↔ razter/system
         .draw_done(feed_done),
         .busy(frame_driver_busy),
-        .draw_start(1'b1) //draw_start
+        .draw_start(1'b1), //draw_start
+        
+        
+        .red_1_2(red_1_2),
+        .red_3(red_3)
     );
     
     transform_setup 
@@ -363,60 +377,8 @@ module top_raster_system #(
         .busy(transform_setup_busy)
     );
     
+    assign inst_id_rd_out = inst_id_rd[3:0];
     
-//    model_world_transformer
-//        u_model_world_transformer (
-//        .clk(clk_render),
-//        .rst(rst),
-//        .camera_transform_valid(camera_transform_valid),
-        
-//        // communication with frame driver
-//        .transform(transform_out),
-//        .triangle(world_tri_out),
-//        .in_valid(frame_driver_valid),
-//        .in_ready(world_ready),
-        
-//        // communication with world to camera
-//        .out_triangle(world_triangle),
-//        .out_valid(world_valid),
-//        .out_ready(camera_ready),
-//        .busy(world_busy)
-//    );
-
-//    world_camera_transformer 
-//        u_world_camera_transformer (
-//        .clk_render(clk_render),
-//        .rst(rst),
-        
-//        .triangle(world_triangle),
-//        .in_valid(world_valid),
-//        .in_ready(camera_ready),
-        
-//        .out_triangle(camera_triangle),
-//        .out_valid(camera_valid),
-//        .out_ready(project_ready),
-//        .busy(camera_busy)
-//    );  
-        
-//    triangle_projector 
-//        u_trangle_projector (
-//        .clk_render(clk_render),
-//        .rst(rst),
-        
-//        .triangle(camera_triangle),
-//        .in_valid(camera_valid),
-//        .in_ready(project_ready),
-        
-//        .focal_length(focal_length),
-        
-//        .out_triangle(project_triangle),
-//        .out_valid(project_valid),
-//        .out_ready(1'b1),
-//        .busy(project_busy)
-//    );
-    
-    assign tri_id  = tri_id_out[7:0];
-    assign vert_id = vert_id_out[7:0];
     always @(posedge clk_render) begin
         if(|out_model_world)
             output_bit <= 1;

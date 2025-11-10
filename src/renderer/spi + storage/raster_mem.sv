@@ -16,6 +16,7 @@ module raster_mem #(
     parameter VIDX_W  = $clog2(MAX_VERT_CNT), 
     parameter TIDX_W  = $clog2(MAX_TRI_CNT),   
     parameter TRI_W   = 3*VIDX_W,
+    parameter ID_W    = 8,
     parameter DATA_W  = 32,
     parameter TRANS_W = DATA_W * 12,
     parameter INST_W  = DATA_W * 12 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
@@ -24,6 +25,10 @@ module raster_mem #(
     input  logic rst_sck, rst_raster,
     input  logic sck,
     input  logic create_done,
+    
+    // Smooth clock flancs
+    input  logic sck_rise_pulse,
+    input  logic sck_fall_pulse,
 
     // SPI interface
     input  logic        opcode_valid,
@@ -32,21 +37,21 @@ module raster_mem #(
     input  logic  vert_hdr_valid,
     input  logic  vert_valid,
     input  logic [VTX_W-1:0]  vert_in,
-    input  logic [VIDX_W-1:0] vert_id_in,
+    input  logic [ID_W-1:0] vert_id_in,
     input  logic [$clog2(MAX_VERT)-1:0] vert_base,
     input  logic [VIDX_W-1:0] vert_count,
 
     input  logic  tri_hdr_valid,
     input  logic  tri_valid,
     input  logic [TRI_W-1:0] tri_in,
-    input  logic [TIDX_W-1:0] tri_id_in,
+    input  logic [ID_W-1:0]  tri_id_in,
     input  logic [$clog2(MAX_TRI)-1:0] tri_base,
     input  logic [TIDX_W-1:0] tri_count,
 
     // Instance management
     input  logic  inst_valid,
     input  logic [TRANS_W-1:0] transform_in,
-    input  logic [7:0]         inst_id_in,
+    input  logic [ID_W-1:0]         inst_id_in,
 
     // Frame driver access
     input  logic [$clog2(MAX_INST)-1:0] inst_id_rd,
@@ -72,17 +77,21 @@ module raster_mem #(
     logic [VERT_ADDR_W-1:0] vert_addr_wr;
     logic [VTX_W-1:0]       vert_din, vert_out_r;
     logic                   vert_we;
+    logic                   vert_rise_we;
 
     logic [TRI_ADDR_W-1:0] tri_addr_wr;
     logic [TRI_W-1:0]      tri_din, tri_out_r;
     logic                  tri_we;
+    logic                  tri_rise_we;
 
+    assign vert_rise_we = vert_we && sck_rise_pulse;
+    assign tri_rise_we  = tri_we  && sck_rise_pulse;
     (* ram_style = "block" *) logic [VTX_W-1:0] vertex_ram [0:MAX_VERT-1];
     (* ram_style = "block" *) logic [TRI_W-1:0]  tri_ram    [0:MAX_TRI-1];
 
     always_ff @(posedge sck) begin
-        if (vert_we) vertex_ram[vert_addr_wr] <= vert_din;
-        if (tri_we)  tri_ram[tri_addr_wr]   <= tri_din;
+        if (vert_rise_we) vertex_ram[vert_addr_wr] <= vert_din;
+        if (tri_rise_we)  tri_ram[tri_addr_wr]   <= tri_din;
     end
 
     always_ff @(posedge clk) begin
@@ -94,9 +103,12 @@ module raster_mem #(
     // Instance RAM (dual-port XPM)
     // =============================================
     logic inst_we;
+    logic inst_edge_we;
     logic [INST_W-1:0] inst_din;
     logic [INST_W-1:0] inst_dout_r;
     logic [INST_W-1:0] inst_dout_a;
+    
+    assign inst_edge_we = inst_we && sck_rise_pulse;
 
     xpm_memory_tdpram #(
         .MEMORY_SIZE        (MAX_INST * INST_W),
@@ -117,7 +129,7 @@ module raster_mem #(
         .clka   (sck),
         .rsta   (rst_sck),
         .ena    (1'b1),
-        .wea    (inst_we),
+        .wea    (inst_edge_we),
         .addra  (inst_id_in),
         .dina   (inst_din),
         .douta  (inst_dout_a),
@@ -177,7 +189,7 @@ module raster_mem #(
             vert_addr_wr <= 0; tri_addr_wr <= 0;
             inst_din <= 0;
             mem_state <= IDLE;
-        end else begin
+        end else if (sck_rise_pulse) begin
             if (opcode_valid) begin
                 unique case (opcode)
                     4'b0001: mem_state <= CREATE_VERT_HDR;
@@ -229,7 +241,7 @@ module raster_mem #(
                     mem_state <= IDLE;
                 end
                 UPDATE_INST: if (inst_valid) begin
-                    inst_din <= {transform_in, inst_dout_a[15:0]};
+                    inst_din <= {transform_in, vert_id_in, tri_id_in};
                     inst_we  <= 1;
                     mem_state <= IDLE;
                 end

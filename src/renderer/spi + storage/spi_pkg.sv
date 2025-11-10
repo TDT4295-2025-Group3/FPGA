@@ -1,10 +1,10 @@
 package opcode_defs;
-    localparam logic [3:0] OP_IDLE        = 4'b0000;
+    localparam logic [3:0] OP_WIPE_ALL    = 4'b0000;
     localparam logic [3:0] OP_CREATE_VERT = 4'b0001;
     localparam logic [3:0] OP_CREATE_TRI  = 4'b0010;
     localparam logic [3:0] OP_CREATE_INST = 4'b0011;
     localparam logic [3:0] OP_UPDATE_INST = 4'b0100;
-    localparam logic [3:0] WIPE_ALL       = 4'b0101;
+    localparam logic [3:0] RESERVED       = 4'b0101;
 endpackage
 
 package status_defs;
@@ -16,7 +16,6 @@ package status_defs;
         INVALID_OPCODE = 4'b0100, // 4
         BUFFER_FULL    = 4'b0101  // 5
     } status_e;
-
 endpackage
 
 // insetance use 32 * 4*3 + 8 * 2 = 400
