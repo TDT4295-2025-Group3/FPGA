@@ -558,5 +558,5 @@ module spi_driver #(
 //    assign ready_ctr_out = ready_ctr;
 //    assign CS_ready_out = CS_ready;
 //    assign wait_ctr_out = wait_ctr;
-    
+     
 endmodule

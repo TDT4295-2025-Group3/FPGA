@@ -30,4 +30,4 @@ src/gfx_clocks.sv
 src/display_480p.sv
 src/triangle_feeder.sv
 src/sincos_feeder.sv
-src/top.sv
+src/top_pcb.sv

@@ -25,15 +25,6 @@ module spi_sck_sync #(
     end
     assign sck_level = sync_1;
 
-//    // --- Edge detection ---
-//    logic prev;
-//    always_ff @(posedge clk_ref) begin
-//        if (!rst_n)
-//            prev <= 0;
-//        else
-//            prev <= sync_1;
-//    end
-
     wire rise_raw =  !sync_1 &  sync_0;
     wire fall_raw =   sync_1 & !sync_0;
 

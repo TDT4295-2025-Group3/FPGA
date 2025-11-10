@@ -25,7 +25,7 @@ module top_raster_system #(
 )(
     // === External signals ===
     input  logic clk_100m,       // raster clock
-    input  logic sck,            // SPI clock
+    input  logic spi_clk,        // SPI clock
     input  logic rst_n,          // reset
     input  logic CS_n,           // chip select
     inout  logic [3:0] spi_io,   // SPI inputs
@@ -60,14 +60,14 @@ module top_raster_system #(
         .clk_locked (clk_locked)
     );
     
-    logic rst_raster;
+    logic rst_render;
     logic rst;
     logic soft_reset;
     logic reset_raster_sync_0;
     logic reset_raster_sync_1;
     logic [2:0] rst_ctr;
     logic rst_protect;
-    logic reset_sck_sync;
+    logic reset_spi_sync;
     logic clk_locked_sync_raster;
     
     assign rst = !rst_n;
@@ -83,36 +83,36 @@ module top_raster_system #(
         end
     end
     
-    // Sck reset pulse with protection flag needed for state
-    always_ff @(posedge sck or posedge rst) begin
+    // spi_clk reset pulse with protection flag needed for state
+    always_ff @(posedge spi_clk or posedge rst) begin
         if(rst) begin
             rst_ctr <= 0;
             rst_protect    <= 0;
-            reset_sck_sync <= 0;
+            reset_spi_sync <= 0;
         end else begin 
             if (rst_ctr == 3) begin           // protect signal an extra cycle
                 rst_protect    <= 0;
                 rst_ctr        <= 0;
             end else if(rst_ctr == 2) begin   // deasert the reset pulse
-                reset_sck_sync <= 0;
+                reset_spi_sync <= 0;
                 rst_ctr        <= rst_ctr +1;
             end else if(rst_ctr == 1) begin   // system spi_driver ready to be reset
                 rst_protect    <= 1;
-                reset_sck_sync <= 1;
+                reset_spi_sync <= 1;
                 rst_ctr        <= rst_ctr +1;
             end else if(soft_reset) begin     // if soft reset, start counting
-                reset_sck_sync <= 0;
+                reset_spi_sync <= 0;
                 rst_ctr        <= rst_ctr +1;
             end
         end
     end
     
-    logic rst_sck;
-    assign rst_raster = !clk_locked_sync_raster || reset_raster_sync_1;
-    assign rst_sck    = rst || reset_sck_sync;
-    assign rst_wipe   = rst && !reset_sck_sync;
+    logic rst_spi;
+    assign rst_render = !clk_locked_sync_raster || reset_raster_sync_1;
+    assign rst_spi    = rst || reset_spi_sync;
+    assign rst_wipe   = rst && !reset_spi_sync;
     
-        // =========================================================
+    // =========================================================
     // SPI clock synchronization and glitch filtering
     // =========================================================
     logic sck_sync_level;
@@ -124,7 +124,7 @@ module top_raster_system #(
     ) u_spi_sck_sync (
         .clk_ref(clk_100m),     // reference clock (100 MHz domain)
         .rst_n(rst_n),
-        .sck_raw(sck),          // raw external SCK input
+        .sck_raw(spi_clk),          // raw external SCK input
         .sck_level(sck_sync_level), // stable version of SCK (optional use)
         .sck_rise_pulse(sck_rise_pulse),
         .sck_fall_pulse(sck_fall_pulse)
@@ -215,7 +215,7 @@ module top_raster_system #(
         .TRANS_W(TRANS_W)
     ) u_spi_driver (
         .sck(clk_100m),
-        .rst(rst_sck),
+        .rst(rst_spi),
         .rst_protect(rst_protect),
         .spi_io(spi_io),
         .CS_n(CS_n),
@@ -269,8 +269,8 @@ module top_raster_system #(
         .TRANS_W(TRANS_W)
     ) u_raster_mem (
         .clk(clk_render),
-        .rst_sck(rst_sck),
-        .rst_raster(rst_raster),
+        .rst_sck(rst_spi),
+        .rst_render(rst_render),
         .sck(clk_100m),
         .create_done(create_done),
         
@@ -328,7 +328,7 @@ module top_raster_system #(
         .ID_W(ID_W)
     ) u_frame_driver (
         .clk(clk_render),
-        .rst(rst_raster),
+        .rst(rst_render),
         .max_inst(max_inst),
         .create_done(create_done),
 
@@ -364,7 +364,7 @@ module top_raster_system #(
     transform_setup 
         u_transform_setup(
         .clk(clk_render),
-        .rst(rst_raster),
+        .rst(rst_render),
         
         .transform_setup(transform_setup),
         .in_valid(transform_setup_valid),

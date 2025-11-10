@@ -1,42 +1,119 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-module top (
-    input  wire logic clk_100m,
-    input  wire logic btn_rst_n,
-    input  wire logic [3:0] sw,
+module top_pcb #(
+    parameter MAX_VERT  = 8192,     // 2^13 bit = 8192, 
+    parameter MAX_TRI   = 8192,     // 2^13 bit = 8192,
+    parameter MAX_INST  = 256,      // maximum instences
+    parameter SCK_FILTER    = 50,    // Min filter period for edge detection, we want n_max = T_raw/(2*T_ref)
+    localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
+    localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
+    localparam MAX_VERT_CNT = 4096,  // max vertices per buffer
+    localparam MAX_TRI_CNT  = 4096,  // max triangles per buffer
+    localparam VTX_W     = 108,
+    localparam VIDX_W    = $clog2(MAX_VERT_CNT),
+    localparam TIDX_W    = $clog2(MAX_TRI_CNT),
+    localparam TRI_W     = 3*VIDX_W,
+    localparam ID_W      = 8,
+    localparam DATA_W    = 32,
+    localparam TRANS_W   = DATA_W * 12
+)(
+    input wire logic clk_pix,       // raster clock
+
+    // VGA
+    output      logic [4:0] vga_r,
+    output      logic [5:0] vga_g,
+    output      logic [4:0] vga_b,
     output      logic vga_hsync,
     output      logic vga_vsync,
-    output      logic [3:0] vga_r,
-    output      logic [3:0] vga_g,
-    output      logic [3:0] vga_b
+
+    // SPI
+    inout wire logic [3:0] spi_io,
+    input wire logic spi_clk,
+    input wire logic spi_cs_n,
+
+    // General Purpose I/O
+    inout wire logic [5:0] gp_io   
 );
 
     import math_pkg::*;
     import color_pkg::*;
     import vertex_pkg::*;
     import transformer_pkg::*;
+    // import opcode_defs::*;
+    // import buffer_id_pkg::*;
+    logic rst_n = 1'b1; // active low reset
 
     // ----------------------------------------------------------------
     // Clocks
     // ----------------------------------------------------------------
-    logic clk_pix;
+    logic clk_100m;
     logic clk_render;
     logic clk_locked;
 
     // new per-domain synchronous resets
-    logic rst_pix;
+    logic rst_100m;
     logic rst_render;
+    logic rst;
+    logic rst_pix;
+
+    assign rst = !rst_n;
+    assign rst_pix = rst || !clk_locked;
 
     gfx_clocks clocks_inst (
-        .clk_100m   (clk_100m),
-        .rst        (!btn_rst_n),
         .clk_pix    (clk_pix),
+        .rst        (!rst_n),
+        .clk_100m   (clk_100m),
         .clk_render (clk_render),
         .clk_locked (clk_locked),
-        .rst_pix    (rst_pix),
+        .rst_100m   (rst_100m),
         .rst_render (rst_render)
     );
+
+    // // Sck reset pulse with protection flag needed for spi_state during WIPE_ALL opcode
+    // always_ff @(posedge sck or posedge rst) begin
+    //     if(rst) begin
+    //         rst_ctr <= 0;
+    //         rst_protect    <= 0;
+    //         reset_sck_sync <= 0;
+    //     end else begin 
+    //         if (rst_ctr == 3) begin           // protect signal an extra cycle
+    //             rst_protect    <= 0;
+    //             rst_ctr        <= 0;
+    //         end else if(rst_ctr == 2) begin   // deasert the reset pulse
+    //             reset_sck_sync <= 0;
+    //             rst_ctr        <= rst_ctr +1;
+    //         end else if(rst_ctr == 1) begin   // system spi_driver ready to be reset
+    //             rst_protect    <= 1;
+    //             reset_sck_sync <= 1;
+    //             rst_ctr        <= rst_ctr +1;
+    //         end else if(soft_reset) begin     // if soft reset, start counting
+    //             reset_sck_sync <= 0;
+    //             rst_ctr        <= rst_ctr +1;
+    //         end
+    //     end
+    // end
+    
+    // logic rst_sck;
+    // assign rst_sck    = rst || reset_sck_sync;
+    
+    // // =========================================================
+    // // SPI clock synchronization and glitch filtering
+    // // =========================================================
+    // logic sck_sync_level;
+    // logic sck_rise_pulse;
+    // logic sck_fall_pulse;
+
+    // spi_sck_sync #(
+    //     .MIN_PERIOD_CYCLES(SCK_FILTER)   // we want a min period of n_max = T_raw/(2*T_ref)
+    // ) u_spi_sck_sync (
+    //     .clk_ref(clk_100m),     // reference clock (100 MHz domain)
+    //     .rst_n(rst_n),
+    //     .sck_raw(sck),          // raw external SCK input
+    //     .sck_level(sck_sync_level), // stable version of SCK (optional use)
+    //     .sck_rise_pulse(sck_rise_pulse),
+    //     .sck_fall_pulse(sck_fall_pulse)
+    // );
 
     // ----------------------------------------------------------------
     // VGA timing
@@ -174,18 +251,11 @@ module top (
     // ----------------------------------------------------------------
 
 
-    (* ASYNC_REG = "TRUE" *) logic [3:0] sw_s1;
-    (* ASYNC_REG = "TRUE" *) logic [3:0] sw_s2;
 
-    always_ff @(posedge clk_render) begin
-        sw_s1 <= sw;
-        sw_s2 <= sw_s1;
-    end
-
-    wire sw_x_en   = sw_s2[0]; // rotate X when high
-    wire sw_y_en   = sw_s2[1]; // rotate Y when high
-    wire sw_z_en   = sw_s2[2]; // rotate Z when high
-    wire sw_cam_en = sw_s2[3];
+    wire sw_x_en   ='d0; // rotate X when high
+    wire sw_y_en   ='d1; // rotate Y when high
+    wire sw_z_en   ='d0; // rotate Z when high
+    wire sw_cam_en ='d0;
 
     localparam int N_ANGLES = 256;
     logic [$clog2(N_ANGLES)-1:0] ang_x, ang_y, ang_z;
@@ -357,13 +427,19 @@ module top (
     // VGA output
     // ----------------------------------------------------------------
     logic de_q;
+    logic [4:0] r5;// = {r4, r4[3]};      // 4 bits -> 5 bits
+    logic [5:0] g6;// = {g4, g4[3:2]};    // 4 bits -> 6 bits
+    logic [4:0] b5;// = {b4, b4[3]};      // 4 bits -> 5 bits
+    assign r5 = {fb_read_data[11:8], fb_read_data[11]};
+    assign g6 = {fb_read_data[7:4], fb_read_data[7:6]};
+    assign b5 = {fb_read_data[3:0], fb_read_data[3]};
     always_ff @(posedge clk_pix) begin
         de_q      <= de;
         vga_hsync <= hsync;
         vga_vsync <= vsync;
-        vga_r     <= de_q ? fb_read_data[11:8] : 4'h0;
-        vga_g     <= de_q ? fb_read_data[7:4]  : 4'h0;
-        vga_b     <= de_q ? fb_read_data[3:0]  : 4'h0;
+        vga_r     <= de_q ? r5 : 5'h0;
+        vga_g     <= de_q ? g6 : 6'h0;
+        vga_b     <= de_q ? b5 : 5'h0;
     end
 
 endmodule
