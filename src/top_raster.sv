@@ -31,14 +31,16 @@ module top_raster_system #(
     output logic [7:0] vert_id,  // JB pmod
     output logic [3:0] spi_status_test,   // JC pmod 1-4
     output logic [3:0] error_status_test, // JC pmod 7-10
+    output logic [3:0] ready_ctr_out,
+    output logic       CS_ready_out,
     
     // JD
-    output logic rst_sck_out,
-    output logic clk_locked_out,
-    output logic output_bit,
+//    output logic rst_sck_out,
+//    output logic clk_locked_out,
+//    output logic sck_out,
     
     // LEDs
-//    output logic sck_out,
+    output logic output_bit,
     output logic rst_test_LED
 );
     assign rst_test = rst_n;
@@ -52,7 +54,7 @@ module top_raster_system #(
     logic clk_render;
     logic clk_locked;
 
-    gfx_clocks clocks_inst (
+    gfx_clocks_spi clocks_inst (
         .clk_100m   (clk_100m),
         .rst        (!rst_n),
         .sck        (sck_no_use),
@@ -71,16 +73,8 @@ module top_raster_system #(
     
     logic rst_sck;
     assign rst_sck = !rst_n;
-//    logic clk_locked_sync_sck;
-//    logic sck_sync;
-    
-//    // 2-stage synchronization
-//    always_ff @(posedge sck) begin
-//        sck_sync <= !rst_n;
-//        rst_sck  <= sck_sync;
-//    end
         
-    assign rst_sck_out = rst_sck;
+//    assign rst_sck_out = rst_sck;
     assign clk_locked_out = clk_locked;
 //    assign sck_out = sck;
         
@@ -114,7 +108,9 @@ module top_raster_system #(
     
     // spi frame ↔ driver
     logic [7:0] max_inst;
+    logic [7:0] max_inst_sync;
     logic       create_done;
+    logic       create_done_sync;
     
     // Raster memory ↔ frame driver
     logic [$clog2(MAX_INST)-1:0] inst_id_rd;
@@ -215,8 +211,39 @@ module top_raster_system #(
         .create_done(create_done),
         
         .spi_status_test(spi_status_test),
-        .error_status_test(error_status_test)
+        .error_status_test(error_status_test),
+        .ready_ctr_out(ready_ctr_out),
+        .CS_ready_out(CS_ready_out)
     );
+    
+//    // Simple FIFO to transfer signal from clock domains sck to clk_raster
+//    xpm_fifo_async #(
+//        .FIFO_MEMORY_TYPE   ("auto"),
+//        .FIFO_WRITE_DEPTH   (16), // 16 is minimum supported depth
+//        .WRITE_DATA_WIDTH   (9),  // 8 bits for max_inst + 1 bit for create_done
+//        .READ_DATA_WIDTH    (9),
+//        .RD_DATA_COUNT_WIDTH(2),
+//        .WR_DATA_COUNT_WIDTH(2),
+//        .READ_MODE          ("fwft"), // first-word fall-through
+//        .CDC_SYNC_STAGES    (2)
+//    ) cdc_fifo_inst (
+//        // write domain (sck)
+//        .wr_clk   (sck),
+//        .wr_en    (create_done),     // push data when done
+//        .din      ({create_done, max_inst}), // pack signals together
+//        .full     (fifo_full),
+//        .overflow (fifo_overflow),
+    
+//        // read domain (clk)
+//        .rd_clk   (clk),
+//        .rd_en    (1'b1),      // you control when to pop (one per frame)
+//        .dout     ({create_done_sync, max_inst_sync}),
+//        .empty    (fifo_empty),
+//        .underflow(fifo_underflow),
+    
+//        // resets
+//        .rst      (rst_raster)
+//    );
 
     // =============================
     // Raster memory

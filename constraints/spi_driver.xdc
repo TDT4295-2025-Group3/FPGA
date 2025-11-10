@@ -49,14 +49,14 @@ set_property -dict { PACKAGE_PIN T13   IOSTANDARD LVCMOS33 } [get_ports { error_
 set_property -dict { PACKAGE_PIN U13   IOSTANDARD LVCMOS33 } [get_ports { error_status_test[3] }]; #IO_L23N_T3_A02_D18_14 Sch=jc_n[4]
 
 # Pmod Header JD
-set_property -dict { PACKAGE_PIN D4    IOSTANDARD LVCMOS33 } [get_ports { rst_sck_out }]; #IO_L11N_T1_SRCC_35 Sch=jd[1]
-set_property -dict { PACKAGE_PIN D3    IOSTANDARD LVCMOS33 } [get_ports { clk_locked_out }]; #IO_L12N_T1_MRCC_35 Sch=jd[2]
-set_property -dict { PACKAGE_PIN E2    IOSTANDARD LVCMOS33 } [get_ports { sck_out }]; #IO_L13P_T2_MRCC_35 Sch=jd[3]
+set_property -dict { PACKAGE_PIN D4    IOSTANDARD LVCMOS33 } [get_ports { CS_ready_out }]; #IO_L11N_T1_SRCC_35 Sch=jd[1]
+#set_property -dict { PACKAGE_PIN D3    IOSTANDARD LVCMOS33 } [get_ports { clk_locked_out }]; #IO_L12N_T1_MRCC_35 Sch=jd[2]
+#set_property -dict { PACKAGE_PIN     IOSTANDARD LVCMOS33 } [get_ports { sck_out }]; #IO_L13P_T2_MRCC_35 Sch=jd[3]
 #set_property -dict { PACKAGE_PIN F3    IOSTANDARD LVCMOS33 } [get_ports { jd[3] }]; #IO_L13N_T2_MRCC_35 Sch=jd[4]
-#set_property -dict { PACKAGE_PIN E2    IOSTANDARD LVCMOS33 } [get_ports { jd[4] }]; #IO_L14P_T2_SRCC_35 Sch=jd[7]
-#set_property -dict { PACKAGE_PIN D2    IOSTANDARD LVCMOS33 } [get_ports { jd[5] }]; #IO_L14N_T2_SRCC_35 Sch=jd[8]
-#set_property -dict { PACKAGE_PIN H2    IOSTANDARD LVCMOS33 } [get_ports { jd[6] }]; #IO_L15P_T2_DQS_35 Sch=jd[9]
-#set_property -dict { PACKAGE_PIN G2    IOSTANDARD LVCMOS33 } [get_ports { jd[7] }]; #IO_L15N_T2_DQS_35 Sch=jd[10]
+set_property -dict { PACKAGE_PIN E2    IOSTANDARD LVCMOS33 } [get_ports { ready_ctr_out[0] }]; #IO_L14P_T2_SRCC_35 Sch=jd[7]
+set_property -dict { PACKAGE_PIN D2    IOSTANDARD LVCMOS33 } [get_ports { ready_ctr_out[1] }]; #IO_L14N_T2_SRCC_35 Sch=jd[8]
+set_property -dict { PACKAGE_PIN H2    IOSTANDARD LVCMOS33 } [get_ports { ready_ctr_out[2] }]; #IO_L15P_T2_DQS_35 Sch=jd[9]
+set_property -dict { PACKAGE_PIN G2    IOSTANDARD LVCMOS33 } [get_ports { ready_ctr_out[3] }]; #IO_L15N_T2_DQS_35 Sch=jd[10]
 
 # Debug LEDs (optional, onboard LEDs)
 # LED0 = H17, LED1 = K15, LED2 = J15, LED3 = G14

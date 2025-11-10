@@ -55,7 +55,9 @@ module spi_driver #(
     
     // Testing
     output logic [3:0] spi_status_test, // JC pmod 1-4
-    output logic [3:0] error_status_test // JC pmod 7-10
+    output logic [3:0] error_status_test, // JC pmod 7-10
+    output logic [3:0] ready_ctr_out,
+    output logic       CS_ready_out
     );
     
     // spi tri-state logic
@@ -81,7 +83,8 @@ module spi_driver #(
     logic [VTX_W-1:0] vert_r;
     logic spi_out_done;
     logic CS_ready;
-    logic CS_output_wait;
+    logic read_done;
+    logic write_done;
     logic [1:0] out_ctr;
     
     // spi states
@@ -120,7 +123,7 @@ module spi_driver #(
             tri_out        <= 0;
             transform_out  <= 0;
             create_done    <= 0;
-            CS_output_wait <= 0;
+            read_done <= 0;
             error_flag   <= 0;
             error_status <= OK;
             spi_state <= LOAD_OP;
@@ -185,7 +188,7 @@ module spi_driver #(
                              
                             if(vert_ctr ==  vert_count-1) begin
                                 vert_ctr  <= 0;   
-                                CS_output_wait  <= 1;
+                                read_done  <= 1;
                                 spi_state <= CREATE_VERT_RESULT;   
                             end else if (vert_ctr >= MAX_VERT_CNT-1) begin
                                 error_status <= BUFFER_FULL;
@@ -236,7 +239,7 @@ module spi_driver #(
                     
                             if (tri_ctr == tri_count-1) begin 
                                 tri_ctr   <= 0;
-                                CS_output_wait <= 1;
+                                read_done <= 1;
                                 spi_state <= CREATE_TRI_RESULT;
                             end else if (tri_ctr >= MAX_TRI_CNT-1) begin
                                 error_status <= BUFFER_FULL;
@@ -284,7 +287,7 @@ module spi_driver #(
                             inst_valid <= 1;
                             nbl_ctr    <= 0;
                             
-                            CS_output_wait  <= 1;
+                            read_done  <= 1;
                             spi_state  <= CREATE_INST_RESULT;
                         end else begin
                             nbl_ctr <= nbl_ctr +1;
@@ -313,7 +316,7 @@ module spi_driver #(
                             nbl_ctr    <= 0;
                             spi_state  <= STATUS_OUT;
                             
-                            CS_output_wait <= 1;
+                            read_done <= 1;
                             spi_out_r <= error_flag ? error_status : OK;
                             error_status <= OK;
                             create_done <= 1;
@@ -329,7 +332,7 @@ module spi_driver #(
                         vert_valid <= 0;
                         tri_valid  <= 0;
                         inst_valid <= 0;
-                        CS_output_wait <= 0;
+                        read_done  <= 0;
                         if(spi_out_done) begin
                             spi_state <= STATUS_OUT;
                             spi_out_r <= error_flag ? error_status : OK;
@@ -339,7 +342,7 @@ module spi_driver #(
                     end
 
                     STATUS_OUT: begin
-                        CS_output_wait <= 0;
+                        read_done <= 0;
                         if(spi_out_done)
                             spi_state <= LOAD_OP;
                     end
@@ -356,6 +359,7 @@ module spi_driver #(
     end
     
     logic [3:0] ready_ctr;
+    logic       ctn_started;
     logic       output_ready;
     logic       waiting;
     assign output_ready = spi_state == CREATE_VERT_RESULT || spi_state == CREATE_TRI_RESULT || 
@@ -365,18 +369,22 @@ module spi_driver #(
         if(rst) begin
             ready_ctr <= 0;
             CS_ready  <= 0;
-        end else if(output_ready && !CS_output_wait && !waiting) begin;
-            CS_ready  <= 1;
+            ctn_started <= 0;
+        end else if(CS_n || read_done || write_done || waiting) begin
+            CS_ready <= 0;
+            ready_ctr <= 0;
         end else if(!CS_n && !CS_ready) begin
-            if(ready_ctr == 7) begin
+            if(!ctn_started) begin
+                ready_ctr <= 1;
+                ctn_started <= 1;
+            end else if(ready_ctr == 7) begin
                 ready_ctr <= 0;
+                ctn_started <= 0;
                 CS_ready  <= 1;
             end else begin
                 ready_ctr <= ready_ctr +1;
             end
-        end else if(CS_n && CS_ready || CS_output_wait) begin
-            CS_ready <= 0;
-        end
+        end 
     end
     
     logic [3:0] wait_ctr;
@@ -384,12 +392,16 @@ module spi_driver #(
         if(rst) begin
             waiting  <= 0;
             wait_ctr <= 0;
-        end else if(wait_ctr == 6) begin
+        end else if(wait_ctr == 2) begin
             waiting  <= 0;
             wait_ctr <= 0;
-        end else if(CS_output_wait || waiting) begin
-            wait_ctr  <= wait_ctr +1;
-            waiting <= 1;
+        end else if(waiting || read_done) begin
+            wait_ctr <= wait_ctr +1;
+            waiting  <= 1;
+        end else if(waiting || write_done) begin
+            // wait the extra half cycle due to write_done going high on negedge
+            wait_ctr <= 0;
+            waiting  <= 1;
         end
     end
     
@@ -399,9 +411,11 @@ module spi_driver #(
             spi_out_done <= 0;
             spi_oe       <= 0;
             out_ctr      <= 0;
-        end else if (!CS_n && !CS_output_wait && !waiting) begin // && CS_ready
+            write_done   <= 0;
+        end else if (!CS_n && CS_ready && !read_done && !waiting) begin // && CS_ready
             spi_out_done <= 0; // default not done
             spi_oe       <= 0; // default spi_in
+            write_done   <= 0;
             case (spi_state)
                 CREATE_VERT_RESULT: begin
                     spi_oe  <= 1;
@@ -443,15 +457,21 @@ module spi_driver #(
                     spi_oe  <= 1;
                     spi_out <= spi_out_r;
                     spi_out_done <= 1;
+                    write_done   <= 1;
                 end
                 default: begin 
                     spi_oe  <= 0;
                 end
             endcase
+        end else begin
+            spi_oe  <= 0;
+            write_done <= 0;
         end
     end
     
     assign spi_status_test = spi_state;
     assign error_status_test = error_status;
+    assign ready_ctr_out = ready_ctr;
+    assign CS_ready_out = CS_ready;
     
 endmodule

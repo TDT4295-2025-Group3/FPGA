@@ -1,16 +1,17 @@
+// raster_mem_inferred_ram.sv
 `timescale 1ns/1ps
 `default_nettype wire
 import buffer_id_pkg::*;
 import vertex_pkg::*;
 
 module raster_mem #(
-    parameter MAX_VERT  = 8192, // 2^13 = 8192
-    parameter MAX_TRI   = 8192,
-    parameter MAX_INST  = 256,
-    parameter MAX_VERT_BUF = 256,
-    parameter MAX_TRI_BUF  = 256,
-    parameter MAX_VERT_CNT = 256,
-    parameter MAX_TRI_CNT  = 256,
+    parameter MAX_VERT  = 8192,     // 2^13 bit = 8192, 
+    parameter MAX_TRI   = 8192,     // 2^13 bit = 8192,
+    parameter MAX_INST  = 256,      // maximum instences
+    parameter MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
+    parameter MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
+    parameter MAX_VERT_CNT = 4096,  // max vertices per buffer
+    parameter MAX_TRI_CNT  = 4096,  // max triangles per buffer
     parameter VTX_W   = 108,
     parameter VIDX_W  = $clog2(MAX_VERT_CNT), 
     parameter TIDX_W  = $clog2(MAX_TRI_CNT),   
@@ -62,55 +63,43 @@ module raster_mem #(
     output transform_t        transform_out
 );
 
-    // ===================================================
-    //  Vertex Memory (dual-port inferred)
-    // ===================================================
+    // =============================================
+    // Vertex and Triangle Data RAM (dual-port)
+    // =============================================
     localparam VERT_ADDR_W = $clog2(MAX_VERT);
+    localparam TRI_ADDR_W  = $clog2(MAX_TRI);
+
     logic [VERT_ADDR_W-1:0] vert_addr_wr;
     logic [VTX_W-1:0]       vert_din, vert_out_r;
     logic                   vert_we;
 
-    (* ram_style = "block" *) logic [VTX_W-1:0] vertex_ram [0:MAX_VERT-1];
-
-    always_ff @(posedge sck) begin
-        if (vert_we)
-            vertex_ram[vert_addr_wr] <= vert_din;
-    end
-
-    always_ff @(posedge clk)
-        vert_out_r <= vertex_ram[vert_addr_rd];
-
-    // ===================================================
-    //  Triangle Memory (dual-port inferred)
-    // ===================================================
-    localparam TRI_ADDR_W = $clog2(MAX_TRI);
     logic [TRI_ADDR_W-1:0] tri_addr_wr;
     logic [TRI_W-1:0]      tri_din, tri_out_r;
     logic                  tri_we;
 
-    (* ram_style = "block" *) logic [TRI_W-1:0] tri_ram [0:MAX_TRI-1];
+    (* ram_style = "block" *) logic [VTX_W-1:0] vertex_ram [0:MAX_VERT-1];
+    (* ram_style = "block" *) logic [TRI_W-1:0]  tri_ram    [0:MAX_TRI-1];
 
     always_ff @(posedge sck) begin
-        if (tri_we)
-            tri_ram[tri_addr_wr] <= tri_din;
+        if (vert_we) vertex_ram[vert_addr_wr] <= vert_din;
+        if (tri_we)  tri_ram[tri_addr_wr]   <= tri_din;
     end
 
-    always_ff @(posedge clk)
-        tri_out_r <= tri_ram[tri_addr_rd];
+    always_ff @(posedge clk) begin
+        vert_out_r <= vertex_ram[vert_addr_rd];
+        tri_out_r  <= tri_ram[tri_addr_rd];
+    end
 
-    // ===================================================
-    //  Instance Memory (dual-port instantiated)
-    //  We need this because we read and write from the same port 
-    // ===================================================
-    // signals for the instance RAM
-    logic inst_we;                               // write enable (assert 1 cycle with data present)
-    logic [INST_W-1:0] inst_din;                 // packed data to write
-    logic [INST_W-1:0] inst_dout_r;              // packed data read (registered by XPM)
-    logic [INST_W-1:0] inst_dout_a; 
-    
-    // instantiate XPM dual-port RAM (A = write port on sck, B = read port on clk)
+    // =============================================
+    // Instance RAM (dual-port XPM)
+    // =============================================
+    logic inst_we;
+    logic [INST_W-1:0] inst_din;
+    logic [INST_W-1:0] inst_dout_r;
+    logic [INST_W-1:0] inst_dout_a;
+
     xpm_memory_tdpram #(
-        .MEMORY_SIZE        (MAX_INST * INST_W),    // total bits (informational)
+        .MEMORY_SIZE        (MAX_INST * INST_W),
         .MEMORY_PRIMITIVE   ("block"),
         .CLOCKING_MODE      ("independent_clock"),
         .WRITE_DATA_WIDTH_A (INST_W),
@@ -119,22 +108,19 @@ module raster_mem #(
         .READ_DATA_WIDTH_B  (INST_W),
         .ADDR_WIDTH_A       ($clog2(MAX_INST)),
         .ADDR_WIDTH_B       ($clog2(MAX_INST)),
-        .BYTE_WRITE_WIDTH_A (INST_W),               // whole word writes
+        .BYTE_WRITE_WIDTH_A (INST_W),
         .READ_LATENCY_A     (1),
         .READ_LATENCY_B     (1),
         .WRITE_MODE_A       ("write_first"),
         .WRITE_MODE_B       ("read_first")
     ) inst_ram (
-        // Port A - write side (SPI, sck)
         .clka   (sck),
         .rsta   (rst_sck),
         .ena    (1'b1),
-        .wea    (inst_we),          // single-bit or vector, XPM expects [WRITE_DATA_WIDTH_A/...] but for full-word use 1-bit bus may be OK
-        .addra  (inst_id_in),       // From SPI driver
+        .wea    (inst_we),
+        .addra  (inst_id_in),
         .dina   (inst_din),
-        .douta  (inst_dout_a),            
-    
-        // Port B - read side (raster/frame, clk)
+        .douta  (inst_dout_a),
         .clkb   (clk),
         .rstb   (rst_raster),
         .enb    (1'b1),
@@ -142,52 +128,58 @@ module raster_mem #(
         .addrb  (inst_id_rd),
         .dinb   ({INST_W{1'b0}}),
         .doutb  (inst_dout_r)
-        // many other optional ports exist (sleep, injectecc, etc) - leave unconnected
     );
 
-    // ===================================================
-    //  Descriptor Tables
-    // ===================================================
-    vert_desc_t vert_table [MAX_INST];
-    tri_desc_t  tri_table  [MAX_VERT_BUF];
+    // =============================================
+    // Descriptor tables (now inferred RAM)
+    // =============================================
+    logic [VERT_ADDR_W-1:0] vert_table_rd_addr;
+    logic [TRI_ADDR_W-1:0]  tri_table_rd_addr;
 
-    // ===================================================
-    //  FSM and Counters
-    // ===================================================
+//    vert_desc_t vert_table_r;
+//    tri_desc_t  tri_table_r;
+
+    (* ram_style = "block" *) logic [VERT_ADDR_W+VIDX_W-1:0] vert_table_mem [0:MAX_VERT_BUF-1];
+    (* ram_style = "block" *) logic [TRI_ADDR_W+TIDX_W-1:0]  tri_table_mem [0:MAX_TRI_BUF-1];
+
+    // Write descriptors on sck
+    always_ff @(posedge sck) begin
+        if (vert_hdr_valid) vert_table_mem[vert_id_in] <= {vert_base, vert_count};
+        if (tri_hdr_valid)  tri_table_mem[tri_id_in]   <= {tri_base, tri_count};
+    end
+
+    // Read descriptors in clk domain
+    always_ff @(posedge clk) begin
+        {curr_vert_base_out, curr_vert_count_out} <= vert_table_mem[vert_table_rd_addr];
+        {curr_tri_base_out, curr_tri_count_out} <= tri_table_mem[tri_table_rd_addr];
+    end
+
+    // =============================================
+    // FSM and write counters
+    // =============================================
     logic [$clog2(MAX_VERT)-1:0] curr_vert_base;
-    logic [VIDX_W-1:0] curr_vert_count, vert_ctr;
-    logic [$clog2(MAX_TRI)-1:0] curr_tri_base;
-    logic [TIDX_W-1:0] curr_tri_count, tri_ctr;
+    logic [VIDX_W-1:0]           curr_vert_count, vert_ctr;
+    logic [$clog2(MAX_TRI)-1:0]  curr_tri_base;
+    logic [TIDX_W-1:0]           curr_tri_count, tri_ctr;
 
-    enum logic [2:0] {
-        IDLE, WIPE_ALL, CREATE_VERT_HDR, CREATE_VERT_DATA,
-        CREATE_TRI_HDR, CREATE_TRI_DATA,
-        CREATE_INST, UPDATE_INST
-    } mem_state;
+    enum logic [2:0] {IDLE, 
+    CREATE_VERT_HDR, CREATE_VERT_DATA, 
+    CREATE_TRI_HDR, CREATE_TRI_DATA, 
+    CREATE_INST, UPDATE_INST} mem_state;
 
-    // ===================================================
-    //  SPI-Facing FSM
-    // ===================================================
     always_ff @(posedge sck or posedge rst_sck) begin
         if (rst_sck) begin
-            vert_ctr  <= 0;
-            tri_ctr   <= 0;
-            vert_we   <= 0;
-            tri_we    <= 0;
+            vert_ctr  <= 0; tri_ctr <= 0;
+            vert_we   <= 0; tri_we <= 0;
             inst_we   <= 0;
-            curr_vert_base  <= 0;
-            curr_vert_count <= 0;
-            curr_tri_base   <= 0;
-            curr_tri_count  <= 0;
-            vert_addr_wr    <= 0;
-            tri_addr_wr     <= 0;
-            tri_addr_wr     <= 0;
-            inst_din  <= 0;
-            mem_state     <= IDLE;
+            curr_vert_base <= 0; curr_vert_count <= 0;
+            curr_tri_base  <= 0; curr_tri_count  <= 0;
+            vert_addr_wr <= 0; tri_addr_wr <= 0;
+            inst_din <= 0;
+            mem_state <= IDLE;
         end else begin
             if (opcode_valid) begin
                 unique case (opcode)
-                    4'b0000: mem_state <= WIPE_ALL; // wipe all (not implemented)
                     4'b0001: mem_state <= CREATE_VERT_HDR;
                     4'b0010: mem_state <= CREATE_TRI_HDR;
                     4'b0011: mem_state <= CREATE_INST;
@@ -197,100 +189,79 @@ module raster_mem #(
 
             case (mem_state)
                 IDLE: begin
-                    vert_we <= 0;
-                    tri_we  <= 0;
-                    inst_we <= 0;
+                    vert_we <= 0; tri_we <= 0; inst_we <= 0;
                 end
-
                 CREATE_VERT_HDR: if (vert_hdr_valid) begin
-                    vert_table[vert_id_in].base  <= vert_base;
-                    vert_table[vert_id_in].count <= vert_count;
                     curr_vert_base  <= vert_base;
                     curr_vert_count <= vert_count;
                     vert_ctr        <= 0;
-                    vert_addr_wr    <= curr_vert_base;
-                    mem_state           <= CREATE_VERT_DATA;
+                    vert_addr_wr    <= vert_base;
+                    mem_state       <= CREATE_VERT_DATA;
                 end
-
                 CREATE_VERT_DATA: begin
                     vert_we <= 0;
                     if (vert_valid && vert_ctr < curr_vert_count) begin
-                        vert_din      <= vert_in;
-                        vert_we       <= 1;
-                        vert_addr_wr  <= curr_vert_base + vert_ctr;
-                        vert_ctr      <= vert_ctr + 1;
-                    end else if (vert_ctr == curr_vert_count) begin
-                        mem_state  <= IDLE;
-                    end
+                        vert_din     <= vert_in;
+                        vert_addr_wr <= curr_vert_base + vert_ctr;
+                        vert_we      <= 1;
+                        vert_ctr     <= vert_ctr + 1;
+                    end else if (vert_ctr == curr_vert_count) mem_state <= IDLE;
                 end
-
                 CREATE_TRI_HDR: if (tri_hdr_valid) begin
-                    tri_table[tri_id_in].base  <= tri_base;
-                    tri_table[tri_id_in].count <= tri_count;
                     curr_tri_base  <= tri_base;
                     curr_tri_count <= tri_count;
                     tri_ctr        <= 0;
-                    tri_addr_wr    <= curr_tri_base;
+                    tri_addr_wr    <= tri_base;
                     mem_state      <= CREATE_TRI_DATA;
                 end
-
                 CREATE_TRI_DATA: begin
                     tri_we <= 0;
                     if (tri_valid && tri_ctr < curr_tri_count) begin
                         tri_din     <= tri_in;
-                        tri_we      <= 1;
                         tri_addr_wr <= curr_tri_base + tri_ctr;
+                        tri_we      <= 1;
                         tri_ctr     <= tri_ctr + 1;
-                    end else if (tri_ctr == curr_tri_count) begin
-                        mem_state  <= IDLE;
-                    end
+                    end else if (tri_ctr == curr_tri_count) mem_state <= IDLE;
                 end
-
                 CREATE_INST: if (inst_valid) begin
                     inst_din <= {transform_in, vert_id_in, tri_id_in};
                     inst_we  <= 1;
-                    mem_state    <= IDLE;
+                    mem_state <= IDLE;
                 end
-
                 UPDATE_INST: if (inst_valid) begin
-                    inst_we  <= 1;
                     inst_din <= {transform_in, inst_dout_a[15:0]};
-                    mem_state    <= IDLE;
+                    inst_we  <= 1;
+                    mem_state <= IDLE;
                 end
             endcase
         end
     end
 
-    // ===================================================
-    //  Outputs
-    // ===================================================
+    // =============================================
+    // Outputs
+    // =============================================
     assign vert_out    = vertex_t'(vert_out_r);
     assign idx_tri_out = tri_out_r;
 
     inst_t inst_cast;
-    assign inst_cast = inst_t'(inst_dout_r); // r for register which is used for output
-    assign transform_out       = transform_t'(inst_dout_r[TRANS_W+15:16]);
-    
-        logic done_sync_0;
-        logic done_sync_1;
-        always_ff @(posedge clk or posedge rst_raster) begin
-            if(rst_raster) begin
-                done_sync_0 <= 0;
-                done_sync_1 <= 0;
-            end else begin
-                done_sync_0 <= create_done; 
-                done_sync_1 <= done_sync_0;
-                if(done_sync_1) begin
-                    curr_vert_base_out  <= vert_table[inst_cast.vert_id].base;  
-                    curr_vert_count_out <= vert_table[inst_cast.vert_id].count; 
-                    curr_tri_base_out   <= tri_table[inst_cast.tri_id].base;    
-                    curr_tri_count_out  <= tri_table[inst_cast.tri_id].count;   
-                end
+    assign inst_cast = inst_t'(inst_dout_r);
+    assign transform_out = transform_t'(inst_dout_r[TRANS_W+15:16]);
+
+    // Descriptor outputs (synchronized)
+    logic done_sync_0, done_sync_1;
+    always_ff @(posedge clk or posedge rst_raster) begin
+        if (rst_raster) begin
+            done_sync_0 <= 0;
+            done_sync_1 <= 0;
+        end else begin
+            done_sync_0 <= create_done;
+            done_sync_1 <= done_sync_0;
+
+            if (done_sync_1) begin
+                vert_table_rd_addr <= inst_cast.vert_id;
+                tri_table_rd_addr  <= inst_cast.tri_id;
             end
         end
-//    assign curr_vert_base_out  = vert_table[inst_cast.vert_id].base;
-//    assign curr_vert_count_out = vert_table[inst_cast.vert_id].count;
-//    assign curr_tri_base_out   = tri_table[inst_cast.tri_id].base;
-//    assign curr_tri_count_out  = tri_table[inst_cast.tri_id].count;
+    end
 
 endmodule
