@@ -35,6 +35,8 @@ module top_raster_system #(
     output logic [3:0] red_3,
     output logic [7:0] inst_id_rd_out,
     
+    output logic create_done_out,
+    
     
     
     // LEDs
@@ -378,6 +380,7 @@ module top_raster_system #(
     );
     
     assign inst_id_rd_out = inst_id_rd[3:0];
+    assign create_done_out = create_done;
     
     always @(posedge clk_render) begin
         if(|out_model_world)

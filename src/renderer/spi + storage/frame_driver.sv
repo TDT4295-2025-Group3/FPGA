@@ -221,7 +221,7 @@ module frame_driver #(
 
     assign transform_setup = transform_setup_r;
     // slice the red of vertex 0 and 1
-    assign red_1_2 = {t_collect.v0.color[11:8], t_collect.v1.color[11:8]};
+    assign red_1_2 = {t_collect.v1.color[11:8], t_collect.v0.color[11:8]};
     assign red_3   =  t_collect.v2.color[11:8];
     
 
