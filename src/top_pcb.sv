@@ -32,16 +32,18 @@ module top_pcb #(
     input wire logic spi_clk,
     input wire logic spi_cs_n,
 
+    // output      logic output_bit,
+
     // General Purpose I/O
-    inout wire logic [5:0] gp_io   
+    inout wire logic [5:0] gp_io
 );
 
     import math_pkg::*;
     import color_pkg::*;
     import vertex_pkg::*;
     import transformer_pkg::*;
-    // import opcode_defs::*;
-    // import buffer_id_pkg::*;
+    import opcode_defs::*;
+    import buffer_id_pkg::*;
     logic rst_n = 1'b1; // active low reset
 
     // ----------------------------------------------------------------
@@ -52,68 +54,335 @@ module top_pcb #(
     logic clk_locked;
 
     // new per-domain synchronous resets
-    logic rst_100m;
-    logic rst_render;
+    logic rst_100m_locked;
+    logic rst_render_locked;
     logic rst;
     logic rst_pix;
+    logic rst_100m;
+    logic rst_render;
 
     assign rst = !rst_n;
-    assign rst_pix = rst || !clk_locked;
 
     gfx_clocks clocks_inst (
         .clk_pix    (clk_pix),
-        .rst        (!rst_n),
+        .rst        (rst),
         .clk_100m   (clk_100m),
         .clk_render (clk_render),
         .clk_locked (clk_locked),
-        .rst_100m   (rst_100m),
-        .rst_render (rst_render)
+        .rst_100m   (rst_100m_locked),
+        .rst_render (rst_render_locked)
     );
 
-    // // Sck reset pulse with protection flag needed for spi_state during WIPE_ALL opcode
-    // always_ff @(posedge sck or posedge rst) begin
-    //     if(rst) begin
-    //         rst_ctr <= 0;
-    //         rst_protect    <= 0;
-    //         reset_sck_sync <= 0;
-    //     end else begin 
-    //         if (rst_ctr == 3) begin           // protect signal an extra cycle
-    //             rst_protect    <= 0;
-    //             rst_ctr        <= 0;
-    //         end else if(rst_ctr == 2) begin   // deasert the reset pulse
-    //             reset_sck_sync <= 0;
-    //             rst_ctr        <= rst_ctr +1;
-    //         end else if(rst_ctr == 1) begin   // system spi_driver ready to be reset
-    //             rst_protect    <= 1;
-    //             reset_sck_sync <= 1;
-    //             rst_ctr        <= rst_ctr +1;
-    //         end else if(soft_reset) begin     // if soft reset, start counting
-    //             reset_sck_sync <= 0;
-    //             rst_ctr        <= rst_ctr +1;
-    //         end
-    //     end
-    // end
     
-    // logic rst_sck;
-    // assign rst_sck    = rst || reset_sck_sync;
-    
-    // // =========================================================
-    // // SPI clock synchronization and glitch filtering
-    // // =========================================================
-    // logic sck_sync_level;
-    // logic sck_rise_pulse;
-    // logic sck_fall_pulse;
+    // =========================================================
+    // SPI clock synchronization and glitch filtering
+    // =========================================================
+    logic sck_sync_level;
+    logic sck_rise_pulse;
+    logic sck_fall_pulse;
 
-    // spi_sck_sync #(
-    //     .MIN_PERIOD_CYCLES(SCK_FILTER)   // we want a min period of n_max = T_raw/(2*T_ref)
-    // ) u_spi_sck_sync (
-    //     .clk_ref(clk_100m),     // reference clock (100 MHz domain)
-    //     .rst_n(rst_n),
-    //     .sck_raw(sck),          // raw external SCK input
-    //     .sck_level(sck_sync_level), // stable version of SCK (optional use)
-    //     .sck_rise_pulse(sck_rise_pulse),
-    //     .sck_fall_pulse(sck_fall_pulse)
-    // );
+    spi_sck_sync #(
+        .MIN_PERIOD_CYCLES(SCK_FILTER)   // we want a min period of n_max = T_raw/(2*T_ref)
+    ) u_spi_sck_sync (
+        .clk_ref(clk_100m),     // reference clock (100 MHz domain)
+        .rst_n(rst_n),
+        .sck_raw(spi_clk),      // raw external SCK input
+        .sck_level(sck_sync_level),
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse)
+    );
+
+    
+    logic soft_reset;
+    logic reset_render_sync_0;
+    logic reset_render_sync_1;
+    logic reset_pix_sync_0;
+    logic reset_pix_sync_1;
+    logic [2:0] rst_ctr;
+    logic rst_protect;
+    logic reset_spi_sync;
+    
+
+    // 2-stage synchronization
+    always_ff @(posedge clk_render or posedge rst_render_locked) begin
+        if(rst_render_locked) begin
+            reset_pix_sync_0 <= 0;
+            reset_pix_sync_1 <= 0;
+        end else begin
+            reset_pix_sync_0 <= soft_reset;
+            reset_pix_sync_1 <= reset_pix_sync_0;
+        end
+    end
+
+
+    // 2-stage synchronization
+    always_ff @(posedge clk_pix or posedge rst) begin
+        if(rst) begin
+            reset_render_sync_0 <= 0;
+            reset_render_sync_1 <= 0;
+        end else begin
+            reset_render_sync_0 <= soft_reset;
+            reset_render_sync_1 <= reset_render_sync_0;
+        end
+    end
+
+    // Sck reset pulse with protection flag needed for spi_state during WIPE_ALL opcode
+    always_ff @(posedge clk_100m or posedge rst_100m_locked) begin
+        if(rst_100m_locked) begin
+            rst_ctr <= 0;
+            rst_protect    <= 0;
+            reset_spi_sync <= 0;
+        end else if(sck_rise_pulse) begin 
+            if (rst_ctr == 3) begin           // protect signal an extra cycle
+                rst_protect    <= 0;
+                rst_ctr        <= 0;
+            end else if(rst_ctr == 2) begin   // deasert the reset pulse
+                reset_spi_sync <= 0;
+                rst_ctr        <= rst_ctr +1;
+            end else if(rst_ctr == 1) begin   // system spi_driver ready to be reset
+                rst_protect    <= 1;
+                reset_spi_sync <= 1;
+                rst_ctr        <= rst_ctr +1;
+            end else if(soft_reset) begin     // if soft reset, start counting
+                reset_spi_sync <= 0;
+                rst_ctr        <= rst_ctr +1;
+            end
+        end
+    end
+    
+    // Add soft reset from WIPE_ALL opcode and inverse clock reset to reset signals
+    assign rst_100m   = rst_100m_locked   || reset_spi_sync;
+    assign rst_render = rst_render_locked || reset_render_sync_1;
+    assign rst_pix    = rst               || reset_pix_sync_1  || !clk_locked;
+
+    // =============================
+    // Internal signals
+    // =============================
+    q16_16_t focal_length = -5;
+
+    // SPI ↔ Raster memory
+    logic        opcode_valid;
+    logic [3:0]  opcode;
+
+    logic        vert_hdr_valid;
+    logic        vert_valid;
+    logic [VTX_W-1:0] vert_out;
+    logic [$clog2(MAX_VERT)-1:0] vert_base;
+    logic [VIDX_W-1:0] vert_count;
+
+    logic        tri_hdr_valid;
+    logic        tri_valid;
+    logic [TRI_W-1:0] tri_out_mem;
+    logic [$clog2(MAX_TRI)-1:0] tri_base;
+    logic [TIDX_W-1:0] tri_count;
+
+    logic        inst_valid, inst_id_valid;
+    logic [ID_W-1:0] vert_id_out;
+    logic [ID_W-1:0] tri_id_out;
+    logic [ID_W-1:0] inst_id_out;
+    logic [TRANS_W-1:0] transform_out_spi;
+    logic [3:0] status;
+    
+    // spi frame ↔ driver
+    logic [7:0] max_inst;
+    logic [7:0] max_inst_sync;
+    logic       create_done;
+    logic       create_done_sync;
+    
+    // Raster memory ↔ frame driver
+    logic [$clog2(MAX_INST)-1:0] inst_id_rd;
+    logic [$clog2(MAX_VERT)-1:0] vert_addr_rd;
+    logic [$clog2(MAX_TRI)-1:0] tri_addr_rd;
+
+    logic [$clog2(MAX_VERT)-1:0] curr_vert_base_out;
+    logic [VIDX_W-1:0] curr_vert_count_out;
+    logic [$clog2(MAX_TRI)-1:0] curr_tri_base_out;
+    logic [TIDX_W-1:0] curr_tri_count_out;
+    logic [TRI_W-1:0] idx_tri_out;
+    vertex_t vert_data_out;
+    transform_t transform_out_mem;
+
+    // Frame driver ↔ transform_setup
+    logic transform_setup_ready;
+    logic transform_setup_valid;
+    transform_setup_t transform_setup;
+    
+    // Frame driver ↔ razter/system
+    logic feed_done;
+    logic draw_start;
+    logic frame_driver_busy;
+    
+    
+    // Transform_setup ↔ model_world
+    model_world_t out_model_world;
+    logic model_world_valid;
+    logic model_world_ready; 
+    logic transform_setup_busy;
+    
+    // =============================
+    // SPI front-end
+    // =============================
+
+    spi_driver #(
+        .MAX_VERT(MAX_VERT),
+        .MAX_TRI(MAX_TRI),
+        .MAX_INST(MAX_INST),
+        .MAX_VERT_BUF(MAX_VERT_BUF),
+        .MAX_TRI_BUF(MAX_TRI_BUF),
+        .MAX_VERT_CNT(MAX_VERT_CNT),
+        .MAX_TRI_CNT(MAX_TRI_CNT),
+        .VTX_W(VTX_W),
+        .VIDX_W(VIDX_W),
+        .TIDX_W(TIDX_W),
+        .TRI_W(TRI_W),
+        .ID_W(ID_W),
+        .DATA_W(DATA_W),
+        .TRANS_W(TRANS_W)
+    ) u_spi_driver (
+        .sck(clk_100m),
+        .rst(rst_100m),
+        .rst_protect(rst_protect),
+        .spi_io(spi_io),
+        .CS_n(spi_cs_n),
+        
+        .soft_reset(soft_reset),
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse),
+
+        .opcode_valid(opcode_valid),
+        .opcode(opcode),
+
+        .vert_hdr_valid(vert_hdr_valid),
+        .vert_valid(vert_valid),
+        .vert_out(vert_out),
+        .vert_base(vert_base),
+        .vert_count(vert_count),
+
+        .tri_hdr_valid(tri_hdr_valid),
+        .tri_valid(tri_valid),
+        .tri_out(tri_out_mem),
+        .tri_base(tri_base),
+        .tri_count(tri_count),
+
+        .inst_valid(inst_valid),
+        .inst_id_valid(inst_id_valid),
+        .vert_id_out(vert_id_out),
+        .tri_id_out(tri_id_out),
+        .transform_out(transform_out_spi),
+        .inst_id_out(inst_id_out),
+        
+        .max_inst(max_inst),
+        .create_done(create_done)
+    );
+    
+    // =============================
+    // Raster memory
+    // =============================
+
+    raster_mem #(
+        .MAX_VERT(MAX_VERT),
+        .MAX_TRI(MAX_TRI),
+        .MAX_INST(MAX_INST),
+        .MAX_VERT_CNT(MAX_VERT_CNT),
+        .MAX_TRI_CNT(MAX_TRI_CNT),
+        .VTX_W(VTX_W),
+        .VIDX_W(VIDX_W),
+        .TIDX_W(TIDX_W),
+        .TRI_W(TRI_W),
+        .ID_W(ID_W),
+        .DATA_W(DATA_W),
+        .TRANS_W(TRANS_W)
+    ) u_raster_mem (
+        .clk(clk_render),
+        .sck(clk_100m),
+        .rst_render(rst_render),
+        .rst_sck(rst_100m),
+        .create_done(create_done),
+        
+        .sck_rise_pulse(sck_rise_pulse),
+        .sck_fall_pulse(sck_fall_pulse),
+
+        .opcode_valid(opcode_valid),
+        .opcode(opcode),
+
+        .vert_hdr_valid(vert_hdr_valid),
+        .vert_valid(vert_valid),
+        .vert_in(vert_out),
+        .vert_id_in(vert_id_out),
+        .vert_base(vert_base),
+        .vert_count(vert_count),
+
+        .tri_hdr_valid(tri_hdr_valid),
+        .tri_valid(tri_valid),
+        .tri_in(tri_out_mem),
+        .tri_id_in(tri_id_out),
+        .tri_base(tri_base),
+        .tri_count(tri_count),
+
+        .inst_valid(inst_valid),
+        .transform_in(transform_out_spi),
+        .inst_id_in(inst_id_out),
+
+        .inst_id_rd(inst_id_rd),
+        .vert_addr_rd(vert_addr_rd),
+        .tri_addr_rd(tri_addr_rd),
+
+        .curr_vert_base_out(curr_vert_base_out),
+        .curr_vert_count_out(curr_vert_count_out),
+        .curr_tri_base_out(curr_tri_base_out),
+        .curr_tri_count_out(curr_tri_count_out),
+
+        .idx_tri_out(idx_tri_out),
+        .vert_out(vert_data_out),
+        .transform_out(transform_out_mem)
+    );
+
+    // =============================
+    // Frame driver
+    // =============================
+
+    frame_driver #(
+        .MAX_VERT(MAX_VERT),
+        .MAX_TRI(MAX_TRI),
+        .MAX_VERT_CNT(MAX_VERT_CNT),
+        .MAX_TRI_CNT(MAX_TRI_CNT),
+        .VTX_W(VTX_W),
+        .VIDX_W(VIDX_W),
+        .TIDX_W(TIDX_W),
+        .TRI_W(TRI_W),
+        .ID_W(ID_W)
+    ) u_frame_driver (
+        .clk(clk_render),
+        .rst(rst_render),
+        .max_inst(max_inst),
+        .create_done(create_done),
+
+        // Frame driver → memory
+        .vert_addr(vert_addr_rd),
+        .tri_addr(tri_addr_rd),
+        .inst_id_rd(inst_id_rd),
+
+        // Memory → frame driver
+        .vert_in(vert_data_out),
+        .idx_tri(idx_tri_out),
+        .transform_in(transform_out_mem),
+
+        .curr_vert_base(curr_vert_base_out),
+        .curr_tri_base(curr_tri_base_out),
+        .curr_tri_count(curr_tri_count_out),
+
+        // Frame driver → model world transform
+        .out_ready(renderer_ready),
+        .out_valid(transform_setup_valid),
+        .transform_setup(transform_setup),
+        
+        // Frame driver ↔ razter/system
+        .draw_done(feed_done),
+        .busy(frame_driver_busy),
+        .draw_start(begin_frame) //draw_start
+    );
+    
+
 
     // ----------------------------------------------------------------
     // VGA timing
@@ -123,15 +392,15 @@ module top_pcb #(
     logic hsync, vsync, de, frame;
 
     display_480p display_inst (
-        .clk_pix,
-        .rst_pix(rst_pix),
-        .hsync,
-        .vsync,
-        .de,
-        .frame,
-        .line(),
-        .sx,
-        .sy
+        .clk_pix (clk_pix),
+        .rst_pix (rst_pix),
+        .hsync   (hsync),
+        .vsync   (vsync),
+        .de      (de),
+        .frame   (frame),
+        .line    (),
+        .sx      (sx),
+        .sy      (sy)
     );
 
     // Sync frame pulse into render domain
@@ -177,170 +446,14 @@ module top_pcb #(
     end
 
     // ----------------------------------------------------------------
-    // Triangle feeder (memory based)
-    // ----------------------------------------------------------------
-    triangle_t feeder_tri;
-    logic feeder_valid, feeder_busy;
-
-    q16_16_t offset_x, offset_y;
-    assign offset_x = 32'sd0;
-    assign offset_y = 32'sd0;
-    // always_ff @(posedge clk_render or posedge rst_render) begin
-    //     if (rst_render)
-    //         offset_x <= -($signed(FB_WIDTH) <<< 15);
-    //     else if (begin_frame) begin
-    //         if (offset_x >= ($signed(FB_WIDTH) <<< 15))
-    //             offset_x <= -($signed(FB_WIDTH) <<< 15);
-    //         else
-    //             offset_x <= offset_x + (32'sd1 <<< 15);
-    //     end
-    // end
-
-    // always_ff @(posedge clk_render or posedge rst_render) begin
-    //     if (rst_render)
-    //         offset_y <= 11'd0;
-    //     else if (begin_frame) begin
-    //         if (offset_y >= ($signed(FB_HEIGHT) <<< 15))
-    //             offset_y <= 11'd0;
-    //         else
-    //             offset_y <= offset_y + (32'sd1 <<< 13);
-    //     end
-    // end
-
-    // ---------- Camera-first sequencing ----------
-    // 1) Generate a one-cycle camera pulse at frame start
-    logic cam_req;
-    always_ff @(posedge clk_render or posedge rst_render) begin
-        if (rst_render)
-            cam_req <= 1'b0;
-        else if (frame_start_render && !renderer_busy)
-            cam_req <= 1'b1;   // request camera this frame
-        else if (cam_req)
-            cam_req <= 1'b0;   // one-shot
-    end
-    wire cam_pulse = cam_req;   // 1-cycle camera_transform_valid
-
-    // 2) Start feeder one cycle AFTER the camera pulse
-    logic feeder_begin_frame;
-    always_ff @(posedge clk_render or posedge rst_render) begin
-        if (rst_render)
-            feeder_begin_frame <= 1'b0;
-        else
-            feeder_begin_frame <= cam_pulse; // delayed kick for feeder
-    end
-    // --------------------------------------------
-
-    triangle_feeder #(
-        .N_TRIS(712),
-        .MEMFILE("tris.mem")
-    ) feeder_inst (
-        .clk        (clk_render),
-        .rst        (rst_render),
-        .begin_frame(feeder_begin_frame), // was begin_frame
-        .out_valid  (feeder_valid),
-        .out_ready  (renderer_ready),
-        .offset_x   (offset_x),
-        .offset_y   (offset_y),
-        .busy       (feeder_busy),
-        .out_tri    (feeder_tri)
-    );
-    
-
-    // ----------------------------------------------------------------
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
 
-
-
-    wire sw_x_en   ='d0; // rotate X when high
-    wire sw_y_en   ='d1; // rotate Y when high
-    wire sw_z_en   ='d0; // rotate Z when high
-    wire sw_cam_en ='d0;
-
-    localparam int N_ANGLES = 256;
-    logic [$clog2(N_ANGLES)-1:0] ang_x, ang_y, ang_z;
-    logic [$clog2(N_ANGLES)-1:0] ang_cam_x, ang_cam_y, ang_cam_z;
-
-    always_ff @(posedge clk_render or posedge rst_render) begin
-        if (rst_render) begin
-            ang_x     <= 8'd10;
-            ang_y     <= 8'd0;
-            ang_z     <= 8'd0;
-            ang_cam_x <= 8'd0;
-            ang_cam_y <= 8'd0;
-            ang_cam_z <= 8'd0;
-        end else if (frame_start_render) begin
-            if (!sw_cam_en) begin
-                if (sw_x_en) ang_x <= ang_x + 1'b1;
-                if (sw_y_en) ang_y <= ang_y + 1'b1;
-                if (sw_z_en) ang_z <= ang_z + 1'b1;
-            end else begin
-                if (sw_x_en) ang_cam_x <= ang_cam_x + 1'b1;
-                if (sw_y_en) ang_cam_y <= ang_cam_y + 1'b1;
-                if (sw_z_en) ang_cam_z <= ang_cam_z + 1'b1;
-            end
-        end
-    end
-
-    q16_16_t sin_x, cos_x, sin_y, cos_y, sin_z, cos_z;
-    q16_16_t sin_cam_x, cos_cam_x, sin_cam_y, cos_cam_y, sin_cam_z, cos_cam_z;
-
-    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_x (
-        .clk(clk_render), .rst(rst_render), .angle_idx(ang_x), .out_sin(sin_x), .out_cos(cos_x)
-    );
-    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_y (
-        .clk(clk_render), .rst(rst_render), .angle_idx(ang_y), .out_sin(sin_y), .out_cos(cos_y)
-    );
-    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_z (
-        .clk(clk_render), .rst(rst_render), .angle_idx(ang_z), .out_sin(sin_z), .out_cos(cos_z)
-    );
-
-    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_cam_x (
-        .clk(clk_render), .rst(rst_render), .angle_idx(ang_cam_x), .out_sin(sin_cam_x), .out_cos(cos_cam_x)
-    );
-    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_cam_y (
-        .clk(clk_render), .rst(rst_render), .angle_idx(ang_cam_y), .out_sin(sin_cam_y), .out_cos(cos_cam_y)
-    );
-    sincos_feeder #(.N_ANGLES(N_ANGLES), .MEMFILE("sincos.mem")) sincos_cam_z (
-        .clk(clk_render), .rst(rst_render), .angle_idx(ang_cam_z), .out_sin(sin_cam_z), .out_cos(cos_cam_z)
-    );
-
+    
     localparam color12_t CLEAR_COLOR = 12'h223;
     localparam int       FOCAL_LENGTH  = 256;
 
-    transform_t camera_transform;
-    transform_t transform;
-    transform_setup_t transform_setup;
-
-    assign camera_transform.pos         = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0000_0000};
-    assign camera_transform.rot_sin     = '{x:sin_cam_x, y:sin_cam_y, z:sin_cam_z};
-    assign camera_transform.rot_cos     = '{x:cos_cam_x, y:cos_cam_y, z:cos_cam_z};
-    assign camera_transform.scale       = '{x:32'h0001_0000, y:32'h0001_0000, z:32'h0001_0000};
-
-    assign transform.pos                = '{x:32'h0000_0000, y:32'h0000_0000, z:32'h0100_0000}; // pos = (0, 0, 16)
-    assign transform.rot_sin            = '{x:sin_x, y:sin_y, z:sin_z};
-    assign transform.rot_cos            = '{x:cos_x, y:cos_y, z:cos_z};
-    assign transform.scale              = '{x:32'h0000_4000, y:32'h0000_4000, z:32'h0000_4000}; // scale = (0.25, 0.25, 0.25)
-
-
-
-    // Track first triangle of each frame (for camera setup)
-    logic first_tri_this_frame;
-    always_ff @(posedge clk_render or posedge rst_render) begin
-        if (rst_render)
-            first_tri_this_frame <= 1'b1;
-        else if (begin_frame)
-            first_tri_this_frame <= 1'b1;            // new frame: next triangle is camera packet
-        else if (feeder_valid && renderer_ready)
-            first_tri_this_frame <= 1'b0;            // after first tri handshake, only model packets
-    end
-
-    // Fill transform_setup bus: camera first (first triangle), then triangles with model transform
-    assign transform_setup.triangle                 = feeder_tri;
-    assign transform_setup.model_transform          = transform;
-    assign transform_setup.model_transform_valid    = feeder_valid && !first_tri_this_frame;  // all but first triangle
-    assign transform_setup.camera_transform_valid   = feeder_valid &&  first_tri_this_frame;  // first triangle per frame
-    assign transform_setup.camera_transform         = camera_transform;
+    
 
     render_manager #(
         .WIDTH (FB_WIDTH),
@@ -354,10 +467,10 @@ module top_pcb #(
         .clk              (clk_render),
         .rst              (rst_render),
 
-        .begin_frame      (frame_start_render),
+        .begin_frame      (begin_frame),
 
         .transform_setup  (transform_setup),
-        .triangle_valid   (feeder_valid),
+        .triangle_valid   (transform_setup_valid),
         .triangle_ready   (renderer_ready),
 
         .fill_color       (CLEAR_COLOR),
@@ -441,5 +554,12 @@ module top_pcb #(
         vga_g     <= de_q ? g6 : 6'h0;
         vga_b     <= de_q ? b5 : 5'h0;
     end
+ 
+    // always @(posedge clk_render) begin
+    //     if(|transform_setup)
+    //         output_bit <= 1;
+    //     else
+    //         output_bit <= 0;
+    // end
 
 endmodule

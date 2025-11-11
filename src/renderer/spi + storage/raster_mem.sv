@@ -22,7 +22,7 @@ module raster_mem #(
     parameter INST_W  = DATA_W * 12 + $clog2(MAX_VERT_BUF) + $clog2(MAX_TRI_BUF)
 )(
     input  logic clk,
-    input  logic rst_sck, rst_raster,
+    input  logic rst_sck, rst_render,
     input  logic sck,
     input  logic create_done,
     
@@ -134,7 +134,7 @@ module raster_mem #(
         .dina   (inst_din),
         .douta  (inst_dout_a),
         .clkb   (clk),
-        .rstb   (rst_raster),
+        .rstb   (rst_render),
         .enb    (1'b1),
         .web    (1'b0),
         .addrb  (inst_id_rd),
@@ -261,8 +261,8 @@ module raster_mem #(
 
     // Descriptor outputs (synchronized)
     logic done_sync_0, done_sync_1;
-    always_ff @(posedge clk or posedge rst_raster) begin
-        if (rst_raster) begin
+    always_ff @(posedge clk or posedge rst_render) begin
+        if (rst_render) begin
             done_sync_0 <= 0;
             done_sync_1 <= 0;
         end else begin

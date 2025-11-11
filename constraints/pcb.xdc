@@ -66,3 +66,7 @@ set_property -dict { PACKAGE_PIN B6 IOSTANDARD LVCMOS33 } [get_ports { gp_io[2] 
 set_property -dict { PACKAGE_PIN B5 IOSTANDARD LVCMOS33 } [get_ports { gp_io[3] }]
 set_property -dict { PACKAGE_PIN C7 IOSTANDARD LVCMOS33 } [get_ports { gp_io[4] }]
 set_property -dict { PACKAGE_PIN C6 IOSTANDARD LVCMOS33 } [get_ports { gp_io[5] }]
+
+
+# Testing
+# set_property -dict { PACKAGE_PIN A8 IOSTANDARD LVCMOS33 } [get_ports { output_bit }]
