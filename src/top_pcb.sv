@@ -54,18 +54,13 @@ module top_pcb #(
     logic clk_locked;
 
     // new per-domain synchronous resets
+    logic rst;
     logic rst_100m_locked;
     logic rst_render_locked;
-    logic rst;
-    logic rst_pix;
-    logic rst_100m;
-    logic rst_render;
-
-    assign rst = !rst_n;
 
     gfx_clocks clocks_inst (
         .clk_pix    (clk_pix),
-        .rst        (rst),
+        .rst        (!rst),
         .clk_100m   (clk_100m),
         .clk_render (clk_render),
         .clk_locked (clk_locked),
@@ -83,7 +78,7 @@ module top_pcb #(
 
     spi_sck_sync #(
         .MIN_PERIOD_CYCLES(SCK_FILTER)   // we want a min period of n_max = T_raw/(2*T_ref)
-    ) u_spi_sck_sync (
+    ) spi_sck_sync_inst (
         .clk_ref(clk_100m),     // reference clock (100 MHz domain)
         .rst_n(rst_n),
         .sck_raw(spi_clk),      // raw external SCK input
@@ -94,71 +89,35 @@ module top_pcb #(
 
     
     logic soft_reset;
-    logic reset_render_sync_0;
-    logic reset_render_sync_1;
-    logic reset_pix_sync_0;
-    logic reset_pix_sync_1;
-    logic [2:0] rst_ctr;
     logic rst_protect;
-    logic reset_spi_sync;
-    
+    logic rst_100m;
+    logic rst_render;
+    logic rst_pix;
 
-    // 2-stage synchronization
-    always_ff @(posedge clk_render or posedge rst_render_locked) begin
-        if(rst_render_locked) begin
-            reset_pix_sync_0 <= 0;
-            reset_pix_sync_1 <= 0;
-        end else begin
-            reset_pix_sync_0 <= soft_reset;
-            reset_pix_sync_1 <= reset_pix_sync_0;
-        end
-    end
+    reset_controller 
+        reset_ctrl_inst (
+    .rst_n              (rst_n),
+    // Clocks
+    .clk_100m           (clk_100m),
+    .sck_rise_pulse     (sck_rise_pulse),
+    .clk_render         (clk_render),
+    .clk_pix            (clk_pix),
+    // Reset inputs
+    .soft_reset         (soft_reset),
+    .clk_locked         (clk_locked),
+    .rst_100m_locked    (rst_100m_locked),
+    .rst_render_locked  (rst_render_locked),
+    // Reset outputs
+    .rst_100m           (rst_100m),
+    .rst_render         (rst_render),
+    .rst_pix            (rst_pix),
+    .rst_protect        (rst_protect)
+);
 
-
-    // 2-stage synchronization
-    always_ff @(posedge clk_pix or posedge rst) begin
-        if(rst) begin
-            reset_render_sync_0 <= 0;
-            reset_render_sync_1 <= 0;
-        end else begin
-            reset_render_sync_0 <= soft_reset;
-            reset_render_sync_1 <= reset_render_sync_0;
-        end
-    end
-
-    // Sck reset pulse with protection flag needed for spi_state during WIPE_ALL opcode
-    always_ff @(posedge clk_100m or posedge rst_100m_locked) begin
-        if(rst_100m_locked) begin
-            rst_ctr <= 0;
-            rst_protect    <= 0;
-            reset_spi_sync <= 0;
-        end else if(sck_rise_pulse) begin 
-            if (rst_ctr == 3) begin           // protect signal an extra cycle
-                rst_protect    <= 0;
-                rst_ctr        <= 0;
-            end else if(rst_ctr == 2) begin   // deasert the reset pulse
-                reset_spi_sync <= 0;
-                rst_ctr        <= rst_ctr +1;
-            end else if(rst_ctr == 1) begin   // system spi_driver ready to be reset
-                rst_protect    <= 1;
-                reset_spi_sync <= 1;
-                rst_ctr        <= rst_ctr +1;
-            end else if(soft_reset) begin     // if soft reset, start counting
-                reset_spi_sync <= 0;
-                rst_ctr        <= rst_ctr +1;
-            end
-        end
-    end
-    
-    // Add soft reset from WIPE_ALL opcode and inverse clock reset to reset signals
-    assign rst_100m   = rst_100m_locked   || reset_spi_sync;
-    assign rst_render = rst_render_locked || reset_render_sync_1;
-    assign rst_pix    = rst               || reset_pix_sync_1  || !clk_locked;
 
     // =============================
     // Internal signals
     // =============================
-    q16_16_t focal_length = -5;
 
     // SPI ↔ Raster memory
     logic        opcode_valid;
@@ -238,7 +197,7 @@ module top_pcb #(
         .ID_W(ID_W),
         .DATA_W(DATA_W),
         .TRANS_W(TRANS_W)
-    ) u_spi_driver (
+    ) spi_driver_inst (
         .sck(clk_100m),
         .rst(rst_100m),
         .rst_protect(rst_protect),
@@ -292,7 +251,7 @@ module top_pcb #(
         .ID_W(ID_W),
         .DATA_W(DATA_W),
         .TRANS_W(TRANS_W)
-    ) u_raster_mem (
+    ) raster_mem_inst (
         .clk(clk_render),
         .sck(clk_100m),
         .rst_render(rst_render),
@@ -351,7 +310,7 @@ module top_pcb #(
         .TIDX_W(TIDX_W),
         .TRI_W(TRI_W),
         .ID_W(ID_W)
-    ) u_frame_driver (
+    ) frame_driver_inst (
         .clk(clk_render),
         .rst(rst_render),
         .max_inst(max_inst),
@@ -442,7 +401,7 @@ module top_pcb #(
         if (rst_render)
             begin_frame <= 1'b0;
         else
-            begin_frame <= frame_start_render && !renderer_busy;
+            begin_frame <= frame_start_render && !renderer_busy && !frame_driver_busy;
     end
 
     // ----------------------------------------------------------------
