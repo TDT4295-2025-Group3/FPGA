@@ -128,7 +128,7 @@ module frame_driver #(
                 end
                 
                 // ctr 0: inst_dout_r   <= inst_ram[inst_id];
-                // ctr 1: wait?
+                // ctr 1: wait
                 // ctr 2: curr_tri_base <= tri_table_ram[inst_dout_r.base];
                 LOAD_BASE: begin
                     if(wait_ctr == 2) begin

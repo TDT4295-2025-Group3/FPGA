@@ -68,9 +68,7 @@ module raster_mem #(
     output transform_t        transform_out
 );
 
-    // =============================================
-    // Vertex and Triangle Data RAM (dual-port)
-    // =============================================
+    // Vertex and Triangle RAM (infered)
     localparam VERT_ADDR_W = $clog2(MAX_VERT);
     localparam TRI_ADDR_W  = $clog2(MAX_TRI);
 
@@ -99,9 +97,7 @@ module raster_mem #(
         tri_out_r  <= tri_ram[tri_addr_rd];
     end
 
-    // =============================================
-    // Instance RAM (dual-port XPM)
-    // =============================================
+    // Instance RAM (instantiated)
     logic inst_we;
     logic inst_edge_we;
     logic [INST_W-1:0] inst_din;
@@ -142,33 +138,26 @@ module raster_mem #(
         .doutb  (inst_dout_r)
     );
 
-    // =============================================
-    // Descriptor tables (now inferred RAM)
-    // =============================================
+    // Descriptor tables memroy
     logic [VERT_ADDR_W-1:0] vert_table_rd_addr;
     logic [TRI_ADDR_W-1:0]  tri_table_rd_addr;
 
-//    vert_desc_t vert_table_r;
-//    tri_desc_t  tri_table_r;
-
-    (* ram_style = "block" *) logic [VERT_ADDR_W+VIDX_W-1:0] vert_table_mem [0:MAX_VERT_BUF-1];
-    (* ram_style = "block" *) logic [TRI_ADDR_W+TIDX_W-1:0]  tri_table_mem [0:MAX_TRI_BUF-1];
+    (* ram_style = "block" *) logic [VERT_ADDR_W+VIDX_W-1:0] vert_table_ram [0:MAX_VERT_BUF-1];
+    (* ram_style = "block" *) logic [TRI_ADDR_W+TIDX_W-1:0]  tri_table_ram [0:MAX_TRI_BUF-1];
 
     // Write descriptors on sck
     always_ff @(posedge sck) begin
-        if (vert_hdr_valid) vert_table_mem[vert_id_in] <= {vert_base, vert_count};
-        if (tri_hdr_valid)  tri_table_mem[tri_id_in]   <= {tri_base, tri_count};
+        if (vert_hdr_valid) vert_table_ram[vert_id_in] <= {vert_base, vert_count};
+        if (tri_hdr_valid)  tri_table_ram[tri_id_in]   <= {tri_base, tri_count};
     end
 
     // Read descriptors in clk domain
     always_ff @(posedge clk) begin
-        {curr_vert_base_out, curr_vert_count_out} <= vert_table_mem[vert_table_rd_addr];
-        {curr_tri_base_out, curr_tri_count_out} <= tri_table_mem[tri_table_rd_addr];
+        {curr_vert_base_out, curr_vert_count_out} <= vert_table_ram[vert_table_rd_addr];
+        {curr_tri_base_out, curr_tri_count_out}   <= tri_table_ram[tri_table_rd_addr];
     end
 
-    // =============================================
-    // FSM and write counters
-    // =============================================
+    // Memory FSM
     logic [$clog2(MAX_VERT)-1:0] curr_vert_base;
     logic [VIDX_W-1:0]           curr_vert_count, vert_ctr;
     logic [$clog2(MAX_TRI)-1:0]  curr_tri_base;
