@@ -21,7 +21,7 @@ module transform_setup (
     );
 
     // FSM states
-    typedef enum logic [1:0] {IDLE, WAIT, OUTPUT} state_t;
+    typedef enum logic [1:0] {S_IDLE, S_WAIT, S_OUTPUT} state_t;
     state_t state;
     
     // Latched transaction
@@ -87,32 +87,32 @@ module transform_setup (
     end
 
 
-    assign in_ready = (state == IDLE);
-    assign busy     = (state != IDLE);
+    assign in_ready = (state == S_IDLE);
+    assign busy     = (state != S_IDLE);
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
-            state <= IDLE;
+            state <= S_IDLE;
             transform_setup_r <= '0;
             out_valid <= 1'b0;
             out_model_world <= '0;
         end else begin
             case (state)
-                IDLE: begin
+                S_IDLE: begin
                     out_valid <= 1'b0;
                     if (in_valid && in_ready) begin
                         // latch transaction
                         transform_setup_r <= transform_setup;
-                        state <= WAIT;
+                        state <= S_WAIT;
                     end
                 end
 
-                WAIT: begin
+                S_WAIT: begin
                     // one-cycle compute wait
-                    state <= OUTPUT;
+                    state <= S_OUTPUT;
                 end
 
-                OUTPUT: begin
+                S_OUTPUT: begin
 
                     // drive either model or camera fields depending on flags
                     if (transform_setup_r.model_transform_valid) begin
@@ -130,7 +130,7 @@ module transform_setup (
                         out_model_world.model.rot_mtx.R33 <= R33;
                         out_valid <= 1'b1;
                         if (out_ready && out_valid) begin
-                            state <= IDLE;
+                            state <= S_IDLE;
                             out_valid <= 1'b0;
                             transform_setup_r <= '0;
                             transform_setup_r.model_transform_valid <= 1'b0;
@@ -151,7 +151,7 @@ module transform_setup (
                         out_model_world.camera.rot_mtx.R33 <= R33;
                         out_valid <= 1'b1;
                         if (out_ready && out_valid) begin
-                            state <= IDLE;
+                            state <= S_IDLE;
                             out_valid <= 1'b0;
                             transform_setup_r.camera_transform_valid <= 1'b0;
                         end
@@ -159,7 +159,7 @@ module transform_setup (
                 end
 
                 default: begin
-                    state <= IDLE;
+                    state <= S_IDLE;
                 end
             endcase
         end

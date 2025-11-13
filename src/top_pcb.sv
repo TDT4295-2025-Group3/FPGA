@@ -32,7 +32,7 @@ module top_pcb #(
     input wire logic spi_clk,
     input wire logic spi_cs_n,
 
-    // output      logic output_bit,
+//    input wire logic rst_n,
 
     // General Purpose I/O
     inout wire logic [5:0] gp_io
@@ -98,7 +98,7 @@ module top_pcb #(
         reset_ctrl_inst (
     .rst_n              (rst_n),
     // Clocks
-    .clk_100m           (clk_100m),
+    .spi_clk            (spi_clk),
     .sck_rise_pulse     (sck_rise_pulse),
     .clk_render         (clk_render),
     .clk_pix            (clk_pix),
@@ -331,14 +331,14 @@ module top_pcb #(
         .curr_tri_count(curr_tri_count_out),
 
         // Frame driver → model world transform
-        .out_ready(renderer_ready),
+        .out_ready(renderer_ready), //renderer_ready
         .out_valid(transform_setup_valid),
         .transform_setup(transform_setup),
         
         // Frame driver ↔ razter/system
         .draw_done(feed_done),
         .busy(frame_driver_busy),
-        .draw_start(begin_frame) //draw_start
+        .draw_start(frame_start_render) // begin_frame
     );
     
 
@@ -401,7 +401,7 @@ module top_pcb #(
         if (rst_render)
             begin_frame <= 1'b0;
         else
-            begin_frame <= frame_start_render && !renderer_busy && !frame_driver_busy;
+            begin_frame <= frame_start_render && !renderer_busy;  // && !frame_driver_busy;
     end
 
     // ----------------------------------------------------------------
@@ -426,7 +426,7 @@ module top_pcb #(
         .clk              (clk_render),
         .rst              (rst_render),
 
-        .begin_frame      (begin_frame),
+        .begin_frame      (frame_start_render),
 
         .transform_setup  (transform_setup),
         .triangle_valid   (transform_setup_valid),
@@ -513,12 +513,4 @@ module top_pcb #(
         vga_g     <= de_q ? g6 : 6'h0;
         vga_b     <= de_q ? b5 : 5'h0;
     end
- 
-    // always @(posedge clk_render) begin
-    //     if(|transform_setup)
-    //         output_bit <= 1;
-    //     else
-    //         output_bit <= 0;
-    // end
-
 endmodule

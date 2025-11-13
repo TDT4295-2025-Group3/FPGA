@@ -141,30 +141,30 @@ module render_manager #(
     logic        transformer_in_valid, transformer_in_ready, transformer_out_valid, transformer_out_ready, transformer_busy;
     triangle_t   transformer_out_triangle;
 
-    transform_t camera_transform_reg;
-    logic       cam_valid_hold;
+    // transform_t camera_transform_reg;
+    // logic       cam_valid_hold;
 
-    always_ff @(posedge clk or posedge rst) begin
-        if (rst) begin
-            camera_transform_reg <= '0;
-            cam_valid_hold       <= 1'b0;
-        end else begin
-            if (transform_setup.camera_transform_valid) begin
-                camera_transform_reg <= transform_setup.camera_transform;
-                cam_valid_hold       <= 1'b1;
-            end
-            if (transformer_in_valid && transformer_in_ready && cam_valid_hold) begin
-                cam_valid_hold <= 1'b0;
-            end
-        end
-    end
+    // always_ff @(posedge clk or posedge rst) begin
+    //     if (rst) begin
+    //         camera_transform_reg <= '0;
+    //         cam_valid_hold       <= 1'b0;
+    //     end else begin
+    //         if (transform_setup.camera_transform_valid) begin
+    //             camera_transform_reg <= transform_setup.camera_transform;
+    //             cam_valid_hold       <= 1'b1;
+    //         end
+    //         if (transformer_in_valid && transformer_in_ready && cam_valid_hold) begin
+    //             cam_valid_hold <= 1'b0;
+    //         end
+    //     end
+    // end
 
-    transform_setup_t transform_setup_stream;
-    assign transform_setup_stream.triangle                = transform_setup.triangle;
-    assign transform_setup_stream.model_transform         = transform_setup.model_transform;
-    assign transform_setup_stream.model_transform_valid   = transform_setup.model_transform_valid;
-    assign transform_setup_stream.camera_transform        = camera_transform_reg;
-    assign transform_setup_stream.camera_transform_valid  = cam_valid_hold;
+    // transform_setup_t transform_setup_stream;
+    // assign transform_setup_stream.triangle                = transform_setup.triangle;
+    // assign transform_setup_stream.model_transform         = transform_setup.model_transform;
+    // assign transform_setup_stream.model_transform_valid   = transform_setup.model_transform_valid;
+    // assign transform_setup_stream.camera_transform        = camera_transform_reg;
+    // assign transform_setup_stream.camera_transform_valid  = cam_valid_hold;
 
     assign transformer_in_valid = (state == TRIANGLE) ? triangle_valid : 1'b0;
 
@@ -176,7 +176,7 @@ module render_manager #(
         .clk(clk),
         .rst(rst),
 
-        .transform_setup(transform_setup_stream),
+        .transform_setup(transform_setup),
 
         .in_valid(transformer_in_valid),
         .in_ready(transformer_in_ready),

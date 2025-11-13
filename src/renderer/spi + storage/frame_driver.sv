@@ -184,7 +184,8 @@ module frame_driver #(
                         transform_setup_r.camera_transform <= transform_in;
                         transform_setup_r.camera_transform_valid <= 1;
                         out_valid <= 1;
-                        frame_state <= IDLE;
+                        if(out_valid == 1)
+                            frame_state <= IDLE;
                         if(max_inst_sync == 0)
                             next_inst_id <= 0;
                     end else if (inst_id_rd != 0 && out_ready) begin

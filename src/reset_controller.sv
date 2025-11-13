@@ -5,7 +5,7 @@ module reset_controller (
     input  logic rst_n,
     
     // Clocks
-    input  logic clk_100m,         // spi reference clock
+    input  logic spi_clk,         // spi reference clock
     input  logic sck_rise_pulse,   // serial clock rise pulse
     input  logic clk_render,       // render domain clock
     input  logic clk_pix,          // Pixel clock
@@ -57,12 +57,13 @@ module reset_controller (
     end
 
     // Sck reset pulse with protection flag needed for spi_state during WIPE_ALL opcode
-    always_ff @(posedge clk_100m or posedge rst_100m_locked) begin
+    // can't use clk_100m with sck_rise_pulse due to rst race, counter won't increment properly
+    always_ff @(posedge spi_clk or posedge rst_100m_locked) begin
         if(rst_100m_locked) begin
             rst_ctr <= 0;
             rst_protect    <= 0;
             reset_spi_sync <= 0;
-        end else if(sck_rise_pulse) begin 
+        end else begin 
             if (rst_ctr == 3) begin           // protect signal an extra cycle
                 rst_protect    <= 0;
                 rst_ctr        <= 0;
