@@ -2,9 +2,16 @@ src/math_pkg.sv
 src/color_pkg.sv
 src/vertex_pkg.sv
 src/renderer/transformer/transformer_pkg.sv
+src/spi_storage/spi_pkg.sv
 
 src/div.sv
 src/inv.sv
+src/reset_controller.sv
+
+src/spi_storage/spi_sck_sync.sv
+src/spi_storage/spi_driver.sv
+src/spi_storage/raster_mem.sv
+src/spi_storage/frame_driver.sv
 
 src/renderer/transformer/transform_setup.sv
 src/renderer/transformer/model_world_transformer.sv
