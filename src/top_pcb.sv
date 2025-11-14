@@ -45,6 +45,9 @@ module top_pcb #(
     import opcode_defs::*;
     import buffer_id_pkg::*;
     logic rst_n = 1'b1; // active low reset
+    
+    // test
+    logic [3:0] spi_state_out;
 
     // ----------------------------------------------------------------
     // Clocks
@@ -60,7 +63,7 @@ module top_pcb #(
 
     gfx_clocks clocks_inst (
         .clk_pix    (clk_pix),
-        .rst        (!rst),
+        .rst        (!rst_n),
         .clk_100m   (clk_100m),
         .clk_render (clk_render),
         .clk_locked (clk_locked),
@@ -183,9 +186,9 @@ module top_pcb #(
     // =============================
 
     spi_driver #(
-        .MAX_VERT(MAX_VERT),
-        .MAX_TRI(MAX_TRI),
-        .MAX_INST(MAX_INST),
+        .MAX_VERT       (MAX_VERT),
+        .MAX_TRI        (MAX_TRI),
+        .MAX_INST       (MAX_INST),
         .MAX_VERT_BUF(MAX_VERT_BUF),
         .MAX_TRI_BUF(MAX_TRI_BUF),
         .MAX_VERT_CNT(MAX_VERT_CNT),
@@ -513,4 +516,6 @@ module top_pcb #(
         vga_g     <= de_q ? g6 : 6'h0;
         vga_b     <= de_q ? b5 : 5'h0;
     end
+    
+    
 endmodule

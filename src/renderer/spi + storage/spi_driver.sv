@@ -60,7 +60,9 @@ module spi_driver #(
     
     // spi driver ↔ frame driver
     output logic [ID_W-1:0] max_inst,
-    output logic create_done
+    output logic create_done,
+    
+    output logic [3:0] spi_state_out
     );
     
     // spi tri-state logic
@@ -553,7 +555,7 @@ module spi_driver #(
         end
     end
     
-//    assign spi_status_test = spi_state;
+    assign spi_state_out = spi_state;
 //    assign error_status_test = error_status;
 //    assign ready_ctr_out = ready_ctr;
 //    assign CS_ready_out = CS_ready;
