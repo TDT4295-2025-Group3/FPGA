@@ -55,12 +55,12 @@ while {!$success} {
 
     if {$result == 0} {
         puts "======================================="
-        puts "🎉 SUCCESS: Device programmed correctly!"
+        puts "SUCCESS: Device programmed correctly!"
         puts "======================================="
         set success 1
     } else {
         puts "---------------------------------------"
-        puts "⚠️  ERROR: Programming failed:"
+        puts "ERROR: Programming failed:"
         puts $errMsg
         puts "Retrying in 1 second..."
         puts "---------------------------------------"

@@ -170,20 +170,27 @@ module top_pcb #(
     // ----------------------------------------------------------------
     localparam FB_WIDTH  = 320;
     localparam FB_HEIGHT = 240;
+    localparam NEAR_PLANE = 1;
+    localparam FAR_PLANE  = 1000;
+    localparam int N_BITS_FOR_DEPTH = 16 + $clog2(FAR_PLANE-NEAR_PLANE);
 
     logic [8:0]  fb_read_x;
     logic [7:0]  fb_read_y;
 
     color16_t fb_read_data;
 
-    assign fb_read_x = sx[9:1];
-    assign fb_read_y = sy[8:1];
+    logic [9:0] fb_sum_x;
+    logic [9:0] fb_sum_y;
+    assign fb_sum_x = sx + 10'd1;
+    assign fb_sum_y = sy;
+    assign fb_read_x = fb_sum_x[9:1];
+    assign fb_read_y = fb_sum_y[8:1];
     
     // ----------------------------------------------------------------
     // Renderer outputs (render_manager -> depthbuffer)
     // ----------------------------------------------------------------
     logic [15:0] rm_x16, rm_y16;
-    q16_16_t     rm_depth;
+    logic [N_BITS_FOR_DEPTH-1:0] rm_depth;
     color16_t    rm_color;
     logic        rm_use_depth;
     logic        rm_out_valid;
@@ -371,7 +378,9 @@ module top_pcb #(
         .SUBPIXEL_BITS       (3),
         .DENOM_INV_BITS      (36),
         .DENOM_INV_FBITS     (32),
-        .BACKFACE_CULLING    (1'b1)
+        .BACKFACE_CULLING    (1'b1),
+        .NEAR_PLANE          (NEAR_PLANE),
+        .FAR_PLANE           (FAR_PLANE)
     ) render_mgr_inst (
         .clk              (clk_render),
         .rst              (rst_render),
@@ -405,7 +414,8 @@ module top_pcb #(
 
     depthbuffer #(
         .FB_WIDTH (FB_WIDTH),
-        .FB_HEIGHT(FB_HEIGHT)
+        .FB_HEIGHT(FB_HEIGHT),
+        .DEPTH_BITS(N_BITS_FOR_DEPTH)
     ) depthbuffer_inst (
         .clk             (clk_render),
         .rst             (rst_render),

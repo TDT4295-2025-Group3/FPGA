@@ -1,18 +1,18 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-import color_pkg::color16_t;  // or import color_pkg::*;
+import color_pkg::color16_t;
 
 module double_framebuffer #(
     parameter int FB_WIDTH  = 160,
     parameter int FB_HEIGHT = 120
 ) (
-    input  wire logic        clk_write,   // clock for writing (renderer)
-    input  wire logic        clk_read,    // clock for reading (VGA)
-    input  wire logic        swap,        // signal to swap buffers
+    // write side (render)
+    input  wire logic        clk_write,
+    input  wire logic        clk_read,
+    input  wire logic        swap,
     input  wire logic        rst,
 
-    // write side (render)
     input  wire logic        write_enable,
     input  wire logic [$clog2(FB_WIDTH)-1:0]  write_x,
     input  wire logic [$clog2(FB_HEIGHT)-1:0] write_y,
@@ -21,9 +21,9 @@ module double_framebuffer #(
     // read side (VGA)
     input  wire logic [$clog2(FB_WIDTH)-1:0]  read_x,
     input  wire logic [$clog2(FB_HEIGHT)-1:0] read_y,
-    output      color16_t                     read_data,
+    output       color16_t                    read_data,
 
-    // SRAM Left (buffer A)
+    // SRAM Left  (buffer A)
     output logic [20:0] sram_l_addr,
     inout  wire  [15:0] sram_l_dq,
     output logic        sram_l_cs_n,
@@ -43,52 +43,51 @@ module double_framebuffer #(
 );
 
     // ----------------------------------------------------------------
-    // Common address math
+    // Address math (same as old BRAM version)
     // ----------------------------------------------------------------
-    localparam int FB_DEPTH   = FB_WIDTH * FB_HEIGHT;   // 160*120 = 19200
-    localparam int ADDR_WIDTH = $clog2(FB_DEPTH);       // 15 bits
+    localparam int FB_DEPTH   = FB_WIDTH * FB_HEIGHT;
+    localparam int ADDR_WIDTH = $clog2(FB_DEPTH);
 
     logic [ADDR_WIDTH-1:0] write_addr, read_addr;
     assign write_addr = write_y * FB_WIDTH + write_x;
     assign read_addr  = read_y  * FB_WIDTH + read_x;
 
-    // Extend to full 21-bit SRAM address (only low bits used)
     wire [20:0] write_addr_ext = {{(21-ADDR_WIDTH){1'b0}}, write_addr};
     wire [20:0] read_addr_ext  = {{(21-ADDR_WIDTH){1'b0}}, read_addr};
 
-    // Byte lanes always enabled (16-bit words)
+    // full 16-bit word access
     assign sram_l_ub_n = 1'b0;
     assign sram_l_lb_n = 1'b0;
     assign sram_r_ub_n = 1'b0;
     assign sram_r_lb_n = 1'b0;
 
     // ----------------------------------------------------------------
-    // Buffer selection (same scheme as old BRAM version)
+    // Buffer selection (copied from working BRAM version)
     // ----------------------------------------------------------------
     typedef enum logic { FB_A, FB_B } fb_select_t;
 
-    // Which buffer we are WRITING to in clk_write domain
+    // write-domain: which buffer we are writing to
     fb_select_t fb_write_select;
 
-    // One-bit toggle telling the read domain which buffer to READ
-    logic fb_read_sel_wr;   // 0 => read A, 1 => read B (write-domain view)
-    logic fb_read_sel_rd;   // synchronized version in read domain
+    // 1-bit toggle to tell read-domain which buffer to read
+    logic fb_read_sel_wr;   // in write clock domain
+    logic fb_read_sel_rd;   // synchronized into read clock domain
 
-    // Synchronizer flops
+    // synchronizer flops (read domain)
     logic sync_ff1, sync_ff2;
 
-    // Write clock domain: handle swaps
+    // WRITE DOMAIN: handle swap + toggle for read side
     always_ff @(posedge clk_write or posedge rst) begin
         if (rst) begin
             fb_read_sel_wr  <= 1'b0;
-            fb_write_select <= FB_B;  // start by writing B, reading A
+            fb_write_select <= FB_B;   // start writing B, reading A
         end else if (swap) begin
             fb_read_sel_wr  <= ~fb_read_sel_wr;
             fb_write_select <= (fb_write_select == FB_A) ? FB_B : FB_A;
         end
     end
 
-    // Sync fb_read_sel_wr into clk_read domain
+    // READ DOMAIN: sync toggle and decode to FB_A/FB_B
     always_ff @(posedge clk_read or posedge rst) begin
         if (rst) begin
             sync_ff1 <= 1'b0;
@@ -98,22 +97,22 @@ module double_framebuffer #(
             sync_ff2 <= sync_ff1;
         end
     end
+
     assign fb_read_sel_rd = sync_ff2;
 
-    // Enum-style front-buffer select in read domain
     fb_select_t fb_read_select;
     always_ff @(posedge clk_read or posedge rst) begin
         if (rst)
-            fb_read_select <= FB_A;      // read A at reset (contents will be garbage)
+            fb_read_select <= FB_A;              // read A at reset
         else
             fb_read_select <= (fb_read_sel_rd ? FB_B : FB_A);
     end
 
     // ----------------------------------------------------------------
-    // SRAM control signals split by domain
+    // SRAM signals per domain
     // ----------------------------------------------------------------
 
-    // Left chip (A) write-domain signals
+    // Left chip (A) write domain
     logic [20:0] sram_l_addr_wr;
     logic [15:0] sram_l_dq_out_wr;
     logic        sram_l_dq_oe_wr;
@@ -121,13 +120,13 @@ module double_framebuffer #(
     logic        sram_l_we_n_wr;
     logic        sram_l_oe_n_wr;
 
-    // Left chip (A) read-domain signals
+    // Left chip (A) read domain
     logic [20:0] sram_l_addr_rd;
     logic        sram_l_cs_n_rd;
     logic        sram_l_we_n_rd;
     logic        sram_l_oe_n_rd;
 
-    // Right chip (B) write-domain signals
+    // Right chip (B) write domain
     logic [20:0] sram_r_addr_wr;
     logic [15:0] sram_r_dq_out_wr;
     logic        sram_r_dq_oe_wr;
@@ -135,29 +134,29 @@ module double_framebuffer #(
     logic        sram_r_we_n_wr;
     logic        sram_r_oe_n_wr;
 
-    // Right chip (B) read-domain signals
+    // Right chip (B) read domain
     logic [20:0] sram_r_addr_rd;
     logic        sram_r_cs_n_rd;
     logic        sram_r_we_n_rd;
     logic        sram_r_oe_n_rd;
 
-    // Data busses driven only by write-domain
+    // write-side drives the FPGA->SRAM data bus
     assign sram_l_dq = sram_l_dq_oe_wr ? sram_l_dq_out_wr : 16'hZZZZ;
     assign sram_r_dq = sram_r_dq_oe_wr ? sram_r_dq_out_wr : 16'hZZZZ;
 
     // ----------------------------------------------------------------
-    // WRITE DOMAIN (clk_write)
+    // WRITE DOMAIN (clk_write): write back buffer only
     // ----------------------------------------------------------------
     always_ff @(posedge clk_write or posedge rst) begin
         if (rst) begin
-            // Left A defaults
+            // A
             sram_l_addr_wr   <= 21'd0;
             sram_l_dq_out_wr <= 16'd0;
             sram_l_dq_oe_wr  <= 1'b0;
             sram_l_cs_n_wr   <= 1'b1;
             sram_l_we_n_wr   <= 1'b1;
             sram_l_oe_n_wr   <= 1'b1;
-            // Right B defaults
+            // B
             sram_r_addr_wr   <= 21'd0;
             sram_r_dq_out_wr <= 16'd0;
             sram_r_dq_oe_wr  <= 1'b0;
@@ -165,7 +164,7 @@ module double_framebuffer #(
             sram_r_we_n_wr   <= 1'b1;
             sram_r_oe_n_wr   <= 1'b1;
         end else begin
-            // Default: no write this cycle
+            // defaults: no write
             sram_l_cs_n_wr  <= 1'b1;
             sram_l_we_n_wr  <= 1'b1;
             sram_l_oe_n_wr  <= 1'b1;
@@ -179,24 +178,20 @@ module double_framebuffer #(
             if (write_enable) begin
                 case (fb_write_select)
                     FB_A: begin
-                        // write to left chip A
                         sram_l_addr_wr   <= write_addr_ext;
                         sram_l_dq_out_wr <= write_data;
                         sram_l_dq_oe_wr  <= 1'b1;
-
                         sram_l_cs_n_wr   <= 1'b0;
-                        sram_l_we_n_wr   <= 1'b0;  // write
-                        sram_l_oe_n_wr   <= 1'b1;  // disable SRAM output
+                        sram_l_we_n_wr   <= 1'b0; // write
+                        sram_l_oe_n_wr   <= 1'b1;
                     end
                     FB_B: begin
-                        // write to right chip B
                         sram_r_addr_wr   <= write_addr_ext;
                         sram_r_dq_out_wr <= write_data;
                         sram_r_dq_oe_wr  <= 1'b1;
-
                         sram_r_cs_n_wr   <= 1'b0;
-                        sram_r_we_n_wr   <= 1'b0;  // write
-                        sram_r_oe_n_wr   <= 1'b1;  // disable SRAM output
+                        sram_r_we_n_wr   <= 1'b0; // write
+                        sram_r_oe_n_wr   <= 1'b1;
                     end
                 endcase
             end
@@ -205,25 +200,42 @@ module double_framebuffer #(
 
     // ----------------------------------------------------------------
     // READ DOMAIN (clk_read)
-    //   Single-stage: address at cycle N, data used at cycle N+1,
-    //   matching the old BRAM semantics when combined with your de_q.
+    //
+    // Contract to the rest of the design:
+    //   - color for (read_x, read_y) used in cycle N
+    //   - appears on read_data in cycle N+1
+    //
+    // Implementation:
+    //   - each cycle we:
+    //       1) sample data from the *previous* front buffer (fb_front_prev)
+    //       2) issue a new read to the *current* front buffer (fb_read_select)
     // ----------------------------------------------------------------
+    fb_select_t fb_front_prev;   // buffer we sampled this cycle (was front last cycle)
+    color16_t   read_data_reg;
+
     always_ff @(posedge clk_read or posedge rst) begin
         if (rst) begin
-            // A
+            // initial: no reads
             sram_l_addr_rd <= 21'd0;
             sram_l_cs_n_rd <= 1'b1;
             sram_l_we_n_rd <= 1'b1;
             sram_l_oe_n_rd <= 1'b1;
-            // B
+
             sram_r_addr_rd <= 21'd0;
             sram_r_cs_n_rd <= 1'b1;
             sram_r_we_n_rd <= 1'b1;
             sram_r_oe_n_rd <= 1'b1;
 
-            read_data      <= '{default: 0};
+            fb_front_prev  <= FB_A;        // arbitrary
+            read_data_reg  <= '{default:0};
         end else begin
-            // default: neither chip selected from read side
+            // 1) sample data from the buffer that was front in the *previous* cycle
+            case (fb_front_prev)
+                FB_A: read_data_reg <= sram_l_dq;
+                FB_B: read_data_reg <= sram_r_dq;
+            endcase
+
+            // 2) default: deselect both chips in read domain
             sram_l_cs_n_rd <= 1'b1;
             sram_l_we_n_rd <= 1'b1;
             sram_l_oe_n_rd <= 1'b1;
@@ -232,36 +244,35 @@ module double_framebuffer #(
             sram_r_we_n_rd <= 1'b1;
             sram_r_oe_n_rd <= 1'b1;
 
-            // front-buffer read
+            // 3) issue a new read for the *current* front buffer
+            fb_front_prev <= fb_read_select;       // next cycle we'll sample from this one
+
             case (fb_read_select)
                 FB_A: begin
                     sram_l_addr_rd <= read_addr_ext;
                     sram_l_cs_n_rd <= 1'b0;
-                    sram_l_we_n_rd <= 1'b1; // read-only
+                    sram_l_we_n_rd <= 1'b1;        // read
                     sram_l_oe_n_rd <= 1'b0;
-
-                    // sample A's data (for previous address)
-                    read_data <= sram_l_dq;
                 end
                 FB_B: begin
                     sram_r_addr_rd <= read_addr_ext;
                     sram_r_cs_n_rd <= 1'b0;
-                    sram_r_we_n_rd <= 1'b1; // read-only
+                    sram_r_we_n_rd <= 1'b1;        // read
                     sram_r_oe_n_rd <= 1'b0;
-
-                    // sample B's data
-                    read_data <= sram_r_dq;
                 end
             endcase
         end
     end
 
+    assign read_data = read_data_reg;
+
     // ----------------------------------------------------------------
-    // Top-level pin muxing
+    // Top-level mux for pins: each chip is *either* in write mode
+    // (back buffer) or read mode (front buffer), never both.
     // ----------------------------------------------------------------
     always_comb begin
         if (fb_write_select == FB_A) begin
-            // A is back buffer (write), B is front buffer (read)
+            // A = back buffer (write), B = front buffer (read)
             sram_l_addr = sram_l_addr_wr;
             sram_l_cs_n = sram_l_cs_n_wr;
             sram_l_we_n = sram_l_we_n_wr;
@@ -272,7 +283,7 @@ module double_framebuffer #(
             sram_r_we_n = sram_r_we_n_rd;
             sram_r_oe_n = sram_r_oe_n_rd;
         end else begin
-            // B is back buffer (write), A is front buffer (read)
+            // B = back buffer (write), A = front buffer (read)
             sram_l_addr = sram_l_addr_rd;
             sram_l_cs_n = sram_l_cs_n_rd;
             sram_l_we_n = sram_l_we_n_rd;
