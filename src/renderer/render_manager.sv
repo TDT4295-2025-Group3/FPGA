@@ -8,7 +8,10 @@ module render_manager #(
     parameter int SUBPIXEL_BITS = 4,
     parameter int DENOM_INV_BITS = 36,
     parameter int DENOM_INV_FBITS = 35,
-    parameter bit BACKFACE_CULLING = 1'b1
+    parameter bit BACKFACE_CULLING = 1'b1,
+    parameter int NEAR_PLANE = 1,
+    parameter int FAR_PLANE  = 1000,
+    localparam int N_BITS_FOR_DEPTH = 16 + $clog2(FAR_PLANE-NEAR_PLANE)
 ) (
     input  wire logic clk,
     input  wire logic rst,
@@ -25,8 +28,8 @@ module render_manager #(
 
     output logic [15:0] out_pixel_x,
     output logic [15:0] out_pixel_y,
-    output q16_16_t     out_depth,
-    output color12_t    out_color,
+    output logic [16 + $clog2(FAR_PLANE-NEAR_PLANE)-1:0] out_depth,
+    output color16_t    out_color,
     output logic        out_compare_depth,
     output logic        out_valid,
     input wire logic    out_ready,
@@ -113,8 +116,8 @@ module render_manager #(
     logic screen_filler_in_valid, screen_filler_in_ready, screen_filler_busy, screen_filler_out_valid;
     assign screen_filler_in_valid = screen_filler_start;
     logic [15:0]  screen_filler_x, screen_filler_y;
-    q16_16_t screen_filler_depth;
-    color12_t screen_filler_color;
+    logic [N_BITS_FOR_DEPTH-1:0] screen_filler_depth;
+    color16_t screen_filler_color;
     screen_filler #(
         .WIDTH (WIDTH),
         .HEIGHT(HEIGHT)
@@ -134,7 +137,7 @@ module render_manager #(
         .out_valid  (screen_filler_out_valid),
         .out_ready  (out_ready)
     );
-    assign screen_filler_depth = 32'h7FFF_FFFF; // max signed depth
+    assign screen_filler_depth = {N_BITS_FOR_DEPTH{1'b1}}; // max depth in compressed format
 
 
     // --- transformer wiring (triangle -> transformer -> rasterizer) ---
@@ -146,7 +149,9 @@ module render_manager #(
     transformer #(
         .WIDTH(WIDTH),
         .HEIGHT(HEIGHT),
-        .FOCAL_LENGTH(FOCAL_LENGTH)
+        .FOCAL_LENGTH(FOCAL_LENGTH),
+        .NEAR_PLANE(NEAR_PLANE),
+        .FAR_PLANE(FAR_PLANE)
     ) transformer_inst (
         .clk(clk),
         .rst(rst),
@@ -169,15 +174,17 @@ module render_manager #(
     assign transformer_out_ready = rasterizer_in_ready;
 
     logic [15:0]  rasterizer_x, rasterizer_y;
-    q16_16_t rasterizer_depth;
-    color12_t rasterizer_color;
+    logic [N_BITS_FOR_DEPTH-1:0] rasterizer_depth;
+    color16_t rasterizer_color;
     rasterizer #(
         .WIDTH (WIDTH),
         .HEIGHT(HEIGHT),
         .SUBPIXEL_BITS(SUBPIXEL_BITS),
         .DENOM_INV_BITS(DENOM_INV_BITS),
         .DENOM_INV_FBITS(DENOM_INV_FBITS),
-        .BACKFACE_CULLING(BACKFACE_CULLING)
+        .BACKFACE_CULLING(BACKFACE_CULLING),
+        .NEAR_PLANE(NEAR_PLANE),
+        .FAR_PLANE(FAR_PLANE)
     ) rasterizer_inst (
         .clk(clk),
         .rst(rst),

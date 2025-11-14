@@ -35,7 +35,25 @@ module top_pcb #(
 //    input wire logic rst_n,
 
     // General Purpose I/O
-    inout wire logic [5:0] gp_io
+    inout wire logic [5:0] gp_io,  
+
+    // SRAM Left
+    inout       wire  [15:0] sram_l_dq,
+    output      logic [20:0] sram_l_addr,
+    output      logic        sram_l_cs_n,
+    output      logic        sram_l_we_n,
+    output      logic        sram_l_oe_n,
+    output      logic        sram_l_ub_n,
+    output      logic        sram_l_lb_n,
+
+    // SRAM Right
+    inout       wire  [15:0] sram_r_dq,
+    output      logic [20:0] sram_r_addr,
+    output      logic        sram_r_cs_n,
+    output      logic        sram_r_we_n,
+    output      logic        sram_r_oe_n,
+    output      logic        sram_r_ub_n,
+    output      logic        sram_r_lb_n
 );
 
     import math_pkg::*;
@@ -54,6 +72,8 @@ module top_pcb #(
     logic clk_locked;
 
     // new per-domain synchronous resets
+    logic rst_100m;
+    logic rst_render;
     logic rst;
     logic rst_100m_locked;
     logic rst_render_locked;
@@ -373,23 +393,30 @@ module top_pcb #(
     // ----------------------------------------------------------------
     // Framebuffer
     // ----------------------------------------------------------------
-    localparam FB_WIDTH  = 160;
-    localparam FB_HEIGHT = 120;
+    localparam FB_WIDTH  = 320;
+    localparam FB_HEIGHT = 240;
+    localparam NEAR_PLANE = 1;
+    localparam FAR_PLANE  = 1000;
+    localparam int N_BITS_FOR_DEPTH = 16 + $clog2(FAR_PLANE-NEAR_PLANE);
 
-    logic [7:0]  fb_read_x;
-    logic [6:0]  fb_read_y;
+    logic [8:0]  fb_read_x;
+    logic [7:0]  fb_read_y;
 
-    logic [11:0] fb_read_data;
+    color16_t fb_read_data;
 
-    assign fb_read_x = sx[9:2];
-    assign fb_read_y = sy[8:2];
+    logic [9:0] fb_sum_x;
+    logic [9:0] fb_sum_y;
+    assign fb_sum_x = sx + 10'd1;
+    assign fb_sum_y = sy;
+    assign fb_read_x = fb_sum_x[9:1];
+    assign fb_read_y = fb_sum_y[8:1];
     
     // ----------------------------------------------------------------
     // Renderer outputs (render_manager -> depthbuffer)
     // ----------------------------------------------------------------
     logic [15:0] rm_x16, rm_y16;
-    q16_16_t     rm_depth;
-    logic [11:0] rm_color;
+    logic [N_BITS_FOR_DEPTH-1:0] rm_depth;
+    color16_t    rm_color;
     logic        rm_use_depth;
     logic        rm_out_valid;
     logic        renderer_busy;
@@ -417,7 +444,9 @@ module top_pcb #(
         .SUBPIXEL_BITS       (3),
         .DENOM_INV_BITS      (36),
         .DENOM_INV_FBITS     (32),
-        .BACKFACE_CULLING    (1'b1)
+        .BACKFACE_CULLING    (1'b1),
+        .NEAR_PLANE          (NEAR_PLANE),
+        .FAR_PLANE           (FAR_PLANE)
     ) render_mgr_inst (
         .clk              (clk_render),
         .rst              (rst_render),
@@ -446,12 +475,13 @@ module top_pcb #(
     // Depth buffer (inserted here)
     // ----------------------------------------------------------------
     logic [15:0] db_out_x, db_out_y;
-    logic [11:0] db_out_color;
+    color16_t    db_out_color;
     logic        db_out_valid;
 
     depthbuffer #(
         .FB_WIDTH (FB_WIDTH),
-        .FB_HEIGHT(FB_HEIGHT)
+        .FB_HEIGHT(FB_HEIGHT),
+        .DEPTH_BITS(N_BITS_FOR_DEPTH)
     ) depthbuffer_inst (
         .clk             (clk_render),
         .rst             (rst_render),
@@ -482,32 +512,44 @@ module top_pcb #(
         .rst      (rst_render),
 
         .write_enable(db_out_valid),
-        .write_x     (db_out_x[7:0]),
-        .write_y     (db_out_y[6:0]),
+        .write_x     (db_out_x[8:0]),
+        .write_y     (db_out_y[7:0]),
         .write_data  (db_out_color),
 
         .read_x(fb_read_x),
         .read_y(fb_read_y),
-        .read_data(fb_read_data)
+        .read_data(fb_read_data),
+
+        // SRAM Left (buffer A)
+        .sram_l_addr (sram_l_addr),
+        .sram_l_dq   (sram_l_dq),
+        .sram_l_cs_n (sram_l_cs_n),
+        .sram_l_we_n (sram_l_we_n),
+        .sram_l_oe_n (sram_l_oe_n),
+        .sram_l_ub_n (sram_l_ub_n),
+        .sram_l_lb_n (sram_l_lb_n),
+
+        // SRAM Right (buffer B)
+        .sram_r_addr (sram_r_addr),
+        .sram_r_dq   (sram_r_dq),
+        .sram_r_cs_n (sram_r_cs_n),
+        .sram_r_we_n (sram_r_we_n),
+        .sram_r_oe_n (sram_r_oe_n),
+        .sram_r_ub_n (sram_r_ub_n),
+        .sram_r_lb_n (sram_r_lb_n)
     );
 
     // ----------------------------------------------------------------
     // VGA output
     // ----------------------------------------------------------------
     logic de_q;
-    logic [4:0] r5;// = {r4, r4[3]};      // 4 bits -> 5 bits
-    logic [5:0] g6;// = {g4, g4[3:2]};    // 4 bits -> 6 bits
-    logic [4:0] b5;// = {b4, b4[3]};      // 4 bits -> 5 bits
-    assign r5 = {fb_read_data[11:8], fb_read_data[11]};
-    assign g6 = {fb_read_data[7:4], fb_read_data[7:6]};
-    assign b5 = {fb_read_data[3:0], fb_read_data[3]};
     always_ff @(posedge clk_pix) begin
         de_q      <= de;
         vga_hsync <= hsync;
         vga_vsync <= vsync;
-        vga_r     <= de_q ? r5 : 5'h0;
-        vga_g     <= de_q ? g6 : 6'h0;
-        vga_b     <= de_q ? b5 : 5'h0;
+        vga_r     <= de_q ? fb_read_data.r : 5'd0;
+        vga_g     <= de_q ? fb_read_data.g : 6'd0;
+        vga_b     <= de_q ? fb_read_data.b : 5'd0;
     end
     
 endmodule

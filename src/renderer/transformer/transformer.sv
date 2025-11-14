@@ -8,7 +8,9 @@ import transformer_pkg::*;
 module transformer #(
     parameter int WIDTH  = 320,
     parameter int HEIGHT = 240,
-    parameter int FOCAL_LENGTH = 256
+    parameter int FOCAL_LENGTH = 256,
+    parameter int NEAR_PLANE = 1,
+    parameter int FAR_PLANE  = 1000
 ) (
     input  wire  logic             clk,
     input  wire  logic             rst,
@@ -123,8 +125,8 @@ module transformer #(
     triangle_frustum_culler #(
         .WIDTH  (WIDTH),
         .HEIGHT (HEIGHT),
-        .NEAR_PLANE(1),
-        .FAR_PLANE(10000)
+        .NEAR_PLANE(NEAR_PLANE),
+        .FAR_PLANE(FAR_PLANE)
     ) u_triangle_frustum_culler (
         .clk          (clk),
         .rst          (rst),

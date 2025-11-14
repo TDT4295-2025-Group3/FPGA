@@ -11,7 +11,10 @@ module rasterizer #(
     parameter int SUBPIXEL_BITS = 4,
     parameter int DENOM_INV_BITS = 36,
     parameter int DENOM_INV_FBITS = 35,
-    parameter bit BACKFACE_CULLING = 1'b1
+    parameter bit BACKFACE_CULLING = 1'b1,
+    parameter int NEAR_PLANE = 1,
+    parameter int FAR_PLANE  = 1000,
+    localparam int N_BITS_FOR_DEPTH = 16 + $clog2(FAR_PLANE-NEAR_PLANE)
 ) (
     input  wire logic clk,
     input  wire logic rst,
@@ -25,8 +28,8 @@ module rasterizer #(
 
     output      logic [$clog2(WIDTH)-1:0]  out_pixel_x,
     output      logic [$clog2(HEIGHT)-1:0] out_pixel_y,
-    output      q16_16_t                   out_depth,
-    output      color12_t                  out_color,
+    output      logic [16 + $clog2(FAR_PLANE-NEAR_PLANE)-1:0] out_depth,
+    output      color16_t                  out_color,
     output      logic                      out_valid,
     input  wire logic                      out_ready,
     output      logic                      busy
@@ -132,7 +135,7 @@ module rasterizer #(
     logic                      pe_out_valid;
     logic [$clog2(WIDTH)-1:0]  pe_out_x;
     logic [$clog2(HEIGHT)-1:0] pe_out_y;
-    color12_t                  pe_out_color;
+    color16_t                  pe_out_color;
     q16_16_t                   pe_out_depth;
     logic                      pe_busy;
 
@@ -164,16 +167,48 @@ module rasterizer #(
         .out_color(pe_out_color),
         .out_depth(pe_out_depth),
         .out_valid(pe_out_valid),
-        .out_ready(out_ready),
+        .out_ready(pfc_in_ready),
         .busy(pe_busy)
     );
 
-    assign out_pixel_x = pe_out_x;
-    assign out_pixel_y = pe_out_y;
-    assign out_color   = pe_out_color;
-    assign out_depth   = pe_out_depth;
-    assign out_valid   = pe_out_valid;
+    logic                      pfc_in_ready;
+    logic                      pfc_out_valid;
+    color16_t                  pfc_out_color;
+    logic [N_BITS_FOR_DEPTH-1:0] pfc_out_depth;
+    logic                      pfc_busy;
+    logic [15:0]               pfc_out_x;
+    logic [15:0]               pfc_out_y;
 
-    assign busy = ts_busy || pt_busy || pe_busy;
+    pixel_frustum_culler #(
+        .NEAR_PLANE(NEAR_PLANE),
+        .FAR_PLANE(FAR_PLANE)
+    ) pfc_inst (
+        .clk(clk),
+        .rst(rst),
+
+        .in_color(pe_out_color),
+        .in_depth(pe_out_depth),
+        .in_valid(pe_out_valid),
+        .in_ready(pfc_in_ready),
+        .in_x(pe_out_x),
+        .in_y(pe_out_y),
+
+        .out_color(pfc_out_color),
+        .out_depth(pfc_out_depth),
+        .out_valid(pfc_out_valid),
+        .out_ready(out_ready),
+        .out_x(pfc_out_x),
+        .out_y(pfc_out_y),
+
+        .busy(pfc_busy)
+    );
+
+    assign out_pixel_x = pfc_out_x[$clog2(WIDTH)-1:0];
+    assign out_pixel_y = pfc_out_y[$clog2(HEIGHT)-1:0];
+    assign out_color   = pfc_out_color;
+    assign out_depth   = pfc_out_depth;
+    assign out_valid   = pfc_out_valid;
+
+    assign busy = ts_busy || pt_busy || pe_busy || pfc_busy;
 
 endmodule

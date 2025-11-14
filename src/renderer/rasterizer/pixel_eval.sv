@@ -27,7 +27,7 @@ module pixel_eval #(
 
     output      logic [$clog2(WIDTH)-1:0]           out_x,
     output      logic [$clog2(HEIGHT)-1:0]          out_y,
-    output      color12_t                           out_color,
+    output      color16_t                           out_color,
     output      q16_16_t                            out_depth,
     output      logic                               out_valid,
     input  wire logic                               out_ready,
@@ -85,7 +85,7 @@ module pixel_eval #(
     typedef struct packed {
         logic        valid;
         pixel_state_t pixel;
-        color12_t    color;
+        color16_t    color;
         q16_16_t     depth;
     } pixel_output_t;
 
@@ -269,23 +269,68 @@ module pixel_eval #(
 
     // Stage 6: interpolation using precomputed weights
     logic signed [63:0] tmp_depth_u, tmp_depth_v, tmp_depth_w;
+    logic signed [63:0] r_u, r_v, r_w;
+    logic signed [63:0] g_u, g_v, g_w;
+    logic signed [63:0] b_u, b_v, b_w;
+    logic [15:0] r_acc, g_acc, b_acc;
+    logic [3:0] r0_4, g0_4, b0_4;
+    logic [3:0] r1_4, g1_4, b1_4;
+    logic [3:0] r2_4, g2_4, b2_4;
+    logic [4:0] r0_5, r1_5, r2_5;
+    logic [5:0] g0_6, g1_6, g2_6;
+    logic [4:0] b0_5, b1_5, b2_5;
     always_comb begin
         s6_next.valid = s5_reg.valid;
         s6_next.pixel = s5_reg.pixel;
 
         if (s5_reg.valid) begin
-            // interpolate color (RGB444) and depth (Q16.16)
-            s6_next.color[11:8] = ((s5_reg.u_w * $unsigned(s5_reg.pixel.v0_color[11:8])) +
-                                   (s5_reg.v_w * $unsigned(s5_reg.pixel.v1_color[11:8])) +
-                                   (s5_reg.w_w * $unsigned(s5_reg.pixel.v2_color[11:8])) + 32'h0000_8000) >>> 16;
 
-            s6_next.color[7:4]  = ((s5_reg.u_w * $unsigned(s5_reg.pixel.v0_color[7:4])) +
-                                   (s5_reg.v_w * $unsigned(s5_reg.pixel.v1_color[7:4])) +
-                                   (s5_reg.w_w * $unsigned(s5_reg.pixel.v2_color[7:4])) + 32'h0000_8000) >>> 16;
+            r0_4 = s5_reg.pixel.v0_color[11:8];
+            g0_4 = s5_reg.pixel.v0_color[7:4];
+            b0_4 = s5_reg.pixel.v0_color[3:0];
 
-            s6_next.color[3:0]  = ((s5_reg.u_w * $unsigned(s5_reg.pixel.v0_color[3:0])) +
-                                   (s5_reg.v_w * $unsigned(s5_reg.pixel.v1_color[3:0])) +
-                                   (s5_reg.w_w * $unsigned(s5_reg.pixel.v2_color[3:0])) + 32'h0000_8000) >>> 16;
+            r1_4 = s5_reg.pixel.v1_color[11:8];
+            g1_4 = s5_reg.pixel.v1_color[7:4];
+            b1_4 = s5_reg.pixel.v1_color[3:0];
+
+            r2_4 = s5_reg.pixel.v2_color[11:8];
+            g2_4 = s5_reg.pixel.v2_color[7:4];
+            b2_4 = s5_reg.pixel.v2_color[3:0];
+
+            r0_5 = {r0_4, r0_4[3]};
+            r1_5 = {r1_4, r1_4[3]};
+            r2_5 = {r2_4, r2_4[3]};
+
+            g0_6 = {g0_4, g0_4[3:2]};
+            g1_6 = {g1_4, g1_4[3:2]};
+            g2_6 = {g2_4, g2_4[3:2]};
+
+            b0_5 = {b0_4, b0_4[3]};
+            b1_5 = {b1_4, b1_4[3]};
+            b2_5 = {b2_4, b2_4[3]};
+
+            // Red (5 bits)
+            r_u = $signed(s5_reg.u_w) * $signed({27'b0, r0_5});
+            r_v = $signed(s5_reg.v_w) * $signed({27'b0, r1_5});
+            r_w = $signed(s5_reg.w_w) * $signed({27'b0, r2_5});
+            r_acc = ((r_u + r_v + r_w + 32'h0000_8000) >>> 16);
+
+            // Green (6 bits)
+            g_u = $signed(s5_reg.u_w) * $signed({26'b0, g0_6});
+            g_v = $signed(s5_reg.v_w) * $signed({26'b0, g1_6});
+            g_w = $signed(s5_reg.w_w) * $signed({26'b0, g2_6});
+            g_acc = ((g_u + g_v + g_w + 32'h0000_8000) >>> 16);
+
+            // Blue (5 bits)
+            b_u = $signed(s5_reg.u_w) * $signed({27'b0, b0_5});
+            b_v = $signed(s5_reg.v_w) * $signed({27'b0, b1_5});
+            b_w = $signed(s5_reg.w_w) * $signed({27'b0, b2_5});
+            b_acc = ((b_u + b_v + b_w + 32'h0000_8000) >>> 16);
+
+            // pack with clamping to bit widths
+            s6_next.color[15:11] = (r_acc > 5'd31) ? 5'd31 : r_acc[4:0];
+            s6_next.color[10:5]  = (g_acc > 6'd63) ? 6'd63 : g_acc[5:0];
+            s6_next.color[4:0]   = (b_acc > 5'd31) ? 5'd31 : b_acc[4:0];
 
             tmp_depth_u = s5_reg.u_w * s5_reg.pixel.v0_depth;
             tmp_depth_v = s5_reg.v_w * s5_reg.pixel.v1_depth;
