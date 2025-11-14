@@ -44,10 +44,7 @@ module top_pcb #(
     import transformer_pkg::*;
     import opcode_defs::*;
     import buffer_id_pkg::*;
-    logic rst_n = 1'b1; // active low reset
-    
-    // test
-    logic [3:0] spi_state_out;
+    logic rst_n = 1'b1; // active low reset 
 
     // ----------------------------------------------------------------
     // Clocks
@@ -118,230 +115,229 @@ module top_pcb #(
 );
 
 
-    // =============================
     // Internal signals
-    // =============================
+    // These signals are used as ports between modules
 
     // SPI ↔ Raster memory
-    logic        opcode_valid;
-    logic [3:0]  opcode;
+    logic              opcode_valid;
+    logic [3:0]        opcode;
 
-    logic        vert_hdr_valid;
-    logic        vert_valid;
-    logic [VTX_W-1:0] vert_out;
+    logic              vert_hdr_valid;
+    logic              vert_valid;
+    logic [VTX_W-1:0]  vert_out;
     logic [$clog2(MAX_VERT)-1:0] vert_base;
     logic [VIDX_W-1:0] vert_count;
 
-    logic        tri_hdr_valid;
-    logic        tri_valid;
-    logic [TRI_W-1:0] tri_out_mem;
+    logic              tri_hdr_valid;
+    logic              tri_valid;
+    logic [TRI_W-1:0]  tri_out_mem;
     logic [$clog2(MAX_TRI)-1:0] tri_base;
     logic [TIDX_W-1:0] tri_count;
 
-    logic        inst_valid, inst_id_valid;
-    logic [ID_W-1:0] vert_id_out;
-    logic [ID_W-1:0] tri_id_out;
-    logic [ID_W-1:0] inst_id_out;
+    logic              inst_valid, inst_id_valid;
+    logic [ID_W-1:0]   vert_id_out;
+    logic [ID_W-1:0]   tri_id_out;
+    logic [ID_W-1:0]   inst_id_out;
     logic [TRANS_W-1:0] transform_out_spi;
-    logic [3:0] status;
-    
+    logic [3:0]        status;
+
     // spi frame ↔ driver
-    logic [7:0] max_inst;
-    logic [7:0] max_inst_sync;
-    logic       create_done;
-    logic       create_done_sync;
-    
+    logic [7:0]        max_inst;
+    logic [7:0]        max_inst_sync;
+    logic              create_done;
+    logic              create_done_sync;
+
     // Raster memory ↔ frame driver
     logic [$clog2(MAX_INST)-1:0] inst_id_rd;
     logic [$clog2(MAX_VERT)-1:0] vert_addr_rd;
-    logic [$clog2(MAX_TRI)-1:0] tri_addr_rd;
+    logic [$clog2(MAX_TRI)-1:0]  tri_addr_rd;
 
     logic [$clog2(MAX_VERT)-1:0] curr_vert_base_out;
-    logic [VIDX_W-1:0] curr_vert_count_out;
-    logic [$clog2(MAX_TRI)-1:0] curr_tri_base_out;
-    logic [TIDX_W-1:0] curr_tri_count_out;
-    logic [TRI_W-1:0] idx_tri_out;
-    vertex_t vert_data_out;
-    transform_t transform_out_mem;
+    logic [VIDX_W-1:0]           curr_vert_count_out;
+    logic [$clog2(MAX_TRI)-1:0]  curr_tri_base_out;
+    logic [TIDX_W-1:0]           curr_tri_count_out;
+    logic [TRI_W-1:0]            idx_tri_out;
+    logic [ID_W*2-1:0]           id_data; // IDs for an inst
+    vertex_t                     vert_data_out;
+    transform_t                  transform_out_mem;
 
     // Frame driver ↔ transform_setup
-    logic transform_setup_ready;
-    logic transform_setup_valid;
-    transform_setup_t transform_setup;
-    
-    // Frame driver ↔ razter/system
-    logic feed_done;
-    logic draw_start;
-    logic frame_driver_busy;
-    
-    
+    transform_setup_t  transform_setup;
+    logic              transform_setup_ready;
+    logic              transform_setup_valid;
+
+    // Frame driver ↔ raster/system
+    logic         feed_done;
+    logic         frame_driver_busy;
+    logic [15:0]  back_color;
+
     // Transform_setup ↔ model_world
     model_world_t out_model_world;
-    logic model_world_valid;
-    logic model_world_ready; 
-    logic transform_setup_busy;
-    
-    // =============================
-    // SPI front-end
-    // =============================
+    logic         model_world_valid;
+    logic         model_world_ready;
+    logic         transform_setup_busy;
 
+    
+    // SPI MCU interface
+    // This module takes in quad spi, an spi clock, interprets the data, and
+    // pack in into usable registers acording to the spi protocol
     spi_driver #(
         .MAX_VERT       (MAX_VERT),
         .MAX_TRI        (MAX_TRI),
         .MAX_INST       (MAX_INST),
-        .MAX_VERT_BUF(MAX_VERT_BUF),
-        .MAX_TRI_BUF(MAX_TRI_BUF),
-        .MAX_VERT_CNT(MAX_VERT_CNT),
-        .MAX_TRI_CNT(MAX_TRI_CNT),
-        .VTX_W(VTX_W),
-        .VIDX_W(VIDX_W),
-        .TIDX_W(TIDX_W),
-        .TRI_W(TRI_W),
-        .ID_W(ID_W),
-        .DATA_W(DATA_W),
-        .TRANS_W(TRANS_W)
+        .MAX_VERT_BUF   (MAX_VERT_BUF),
+        .MAX_TRI_BUF    (MAX_TRI_BUF),
+        .MAX_VERT_CNT   (MAX_VERT_CNT),
+        .MAX_TRI_CNT    (MAX_TRI_CNT),
+        .VTX_W          (VTX_W),
+        .VIDX_W         (VIDX_W),
+        .TIDX_W         (TIDX_W),
+        .TRI_W          (TRI_W),
+        .ID_W           (ID_W),
+        .DATA_W         (DATA_W),
+        .TRANS_W        (TRANS_W)
     ) spi_driver_inst (
-        .sck(clk_100m),
-        .rst(rst_100m),
-        .rst_protect(rst_protect),
-        .spi_io(spi_io),
-        .CS_n(spi_cs_n),
+        .sck            (clk_100m),
+        .rst            (rst_100m),
+        .rst_protect    (rst_protect),
+        .spi_io         (spi_io),
+        .CS_n           (spi_cs_n),
         
-        .soft_reset(soft_reset),
-        .sck_rise_pulse(sck_rise_pulse),
-        .sck_fall_pulse(sck_fall_pulse),
+        .soft_reset     (soft_reset),
+        .sck_rise_pulse (sck_rise_pulse),
+        .sck_fall_pulse (sck_fall_pulse),
 
-        .opcode_valid(opcode_valid),
-        .opcode(opcode),
+        .opcode_valid   (opcode_valid),
+        .opcode         (opcode),
 
-        .vert_hdr_valid(vert_hdr_valid),
-        .vert_valid(vert_valid),
-        .vert_out(vert_out),
-        .vert_base(vert_base),
-        .vert_count(vert_count),
+        .vert_hdr_valid (vert_hdr_valid),
+        .vert_valid     (vert_valid),
+        .vert_out       (vert_out),
+        .vert_base      (vert_base),
+        .vert_count     (vert_count),
 
-        .tri_hdr_valid(tri_hdr_valid),
-        .tri_valid(tri_valid),
-        .tri_out(tri_out_mem),
-        .tri_base(tri_base),
-        .tri_count(tri_count),
+        .tri_hdr_valid  (tri_hdr_valid),
+        .tri_valid      (tri_valid),
+        .tri_out        (tri_out_mem),
+        .tri_base       (tri_base),
+        .tri_count      (tri_count),
 
-        .inst_valid(inst_valid),
-        .inst_id_valid(inst_id_valid),
-        .vert_id_out(vert_id_out),
-        .tri_id_out(tri_id_out),
-        .transform_out(transform_out_spi),
-        .inst_id_out(inst_id_out),
+        .inst_valid     (inst_valid),
+        .inst_id_valid  (inst_id_valid),
+        .vert_id_out    (vert_id_out),
+        .tri_id_out     (tri_id_out),
+        .transform_out  (transform_out_spi),
+        .inst_id_out    (inst_id_out),
         
-        .max_inst(max_inst),
-        .create_done(create_done)
+        .max_inst       (max_inst),
+        .create_done    (create_done)
     );
     
-    // =============================
     // Raster memory
-    // =============================
-
+    // This module uses falgs and packed data from spi driver to 
+    // store and update game models 
     raster_mem #(
-        .MAX_VERT(MAX_VERT),
-        .MAX_TRI(MAX_TRI),
-        .MAX_INST(MAX_INST),
-        .MAX_VERT_CNT(MAX_VERT_CNT),
-        .MAX_TRI_CNT(MAX_TRI_CNT),
-        .VTX_W(VTX_W),
-        .VIDX_W(VIDX_W),
-        .TIDX_W(TIDX_W),
-        .TRI_W(TRI_W),
-        .ID_W(ID_W),
-        .DATA_W(DATA_W),
+        .MAX_VERT       (MAX_VERT),
+        .MAX_TRI        (MAX_TRI),
+        .MAX_INST       (MAX_INST),
+        .MAX_VERT_CNT   (MAX_VERT_CNT),
+        .MAX_TRI_CNT    (MAX_TRI_CNT),
+        .VTX_W          (VTX_W),
+        .VIDX_W         (VIDX_W),
+        .TIDX_W         (TIDX_W),
+        .TRI_W          (TRI_W),
+        .ID_W           (ID_W),
+        .DATA_W         (DATA_W),
         .TRANS_W(TRANS_W)
     ) raster_mem_inst (
-        .clk(clk_render),
-        .sck(clk_100m),
-        .rst_render(rst_render),
-        .rst_sck(rst_100m),
-        .create_done(create_done),
+        .clk            (clk_render),
+        .sck            (clk_100m),
+        .rst_render     (rst_render),
+        .rst_sck        (rst_100m),
+        .create_done    (create_done),
         
-        .sck_rise_pulse(sck_rise_pulse),
-        .sck_fall_pulse(sck_fall_pulse),
+        .sck_rise_pulse (sck_rise_pulse),
+        .sck_fall_pulse (sck_fall_pulse),
 
-        .opcode_valid(opcode_valid),
-        .opcode(opcode),
+        .opcode_valid   (opcode_valid),
+        .opcode         (opcode),
 
-        .vert_hdr_valid(vert_hdr_valid),
-        .vert_valid(vert_valid),
-        .vert_in(vert_out),
-        .vert_id_in(vert_id_out),
-        .vert_base(vert_base),
-        .vert_count(vert_count),
+        .vert_hdr_valid (vert_hdr_valid),
+        .vert_valid     (vert_valid),
+        .vert_in        (vert_out),
+        .vert_id_in     (vert_id_out),
+        .vert_base      (vert_base),
+        .vert_count     (vert_count),
 
-        .tri_hdr_valid(tri_hdr_valid),
-        .tri_valid(tri_valid),
-        .tri_in(tri_out_mem),
-        .tri_id_in(tri_id_out),
-        .tri_base(tri_base),
-        .tri_count(tri_count),
+        .tri_hdr_valid  (tri_hdr_valid),
+        .tri_valid      (tri_valid),
+        .tri_in         (tri_out_mem),
+        .tri_id_in      (tri_id_out),
+        .tri_base       (tri_base),
+        .tri_count      (tri_count),
 
-        .inst_valid(inst_valid),
-        .transform_in(transform_out_spi),
-        .inst_id_in(inst_id_out),
+        .inst_valid     (inst_valid),
+        .transform_in   (transform_out_spi),
+        .inst_id_in     (inst_id_out),
 
-        .inst_id_rd(inst_id_rd),
-        .vert_addr_rd(vert_addr_rd),
-        .tri_addr_rd(tri_addr_rd),
+        .inst_id_rd     (inst_id_rd),
+        .vert_addr_rd   (vert_addr_rd),
+        .tri_addr_rd    (tri_addr_rd),
 
-        .curr_vert_base_out(curr_vert_base_out),
-        .curr_vert_count_out(curr_vert_count_out),
-        .curr_tri_base_out(curr_tri_base_out),
-        .curr_tri_count_out(curr_tri_count_out),
+        .curr_vert_base_out  (curr_vert_base_out),
+        .curr_vert_count_out (curr_vert_count_out),
+        .curr_tri_base_out   (curr_tri_base_out),
+        .curr_tri_count_out  (curr_tri_count_out),
 
-        .idx_tri_out(idx_tri_out),
-        .vert_out(vert_data_out),
-        .transform_out(transform_out_mem)
+        .idx_tri_out    (idx_tri_out),
+        .vert_out       (vert_data_out),
+        .id_data        (id_data),
+        .transform_out  (transform_out_mem)
     );
 
-    // =============================
     // Frame driver
-    // =============================
-
+    // This module look up buffer ids and fetch triangle/vertex data from memory
     frame_driver #(
-        .MAX_VERT(MAX_VERT),
-        .MAX_TRI(MAX_TRI),
-        .MAX_VERT_CNT(MAX_VERT_CNT),
-        .MAX_TRI_CNT(MAX_TRI_CNT),
-        .VTX_W(VTX_W),
-        .VIDX_W(VIDX_W),
-        .TIDX_W(TIDX_W),
-        .TRI_W(TRI_W),
-        .ID_W(ID_W)
+        .MAX_VERT       (MAX_VERT),
+        .MAX_TRI        (MAX_TRI),
+        .MAX_VERT_CNT   (MAX_VERT_CNT),
+        .MAX_TRI_CNT    (MAX_TRI_CNT),
+        .VTX_W          (VTX_W),
+        .VIDX_W         (VIDX_W),
+        .TIDX_W         (TIDX_W),
+        .TRI_W          (TRI_W),
+        .ID_W           (ID_W)
     ) frame_driver_inst (
-        .clk(clk_render),
-        .rst(rst_render),
-        .max_inst(max_inst),
-        .create_done(create_done),
+        .clk            (clk_render),
+        .rst            (rst_render),
+        .max_inst       (max_inst),
+        .create_done    (create_done),
 
         // Frame driver → memory
-        .vert_addr(vert_addr_rd),
-        .tri_addr(tri_addr_rd),
-        .inst_id_rd(inst_id_rd),
+        .vert_addr      (vert_addr_rd),
+        .tri_addr       (tri_addr_rd),
+        .inst_id_rd     (inst_id_rd),
 
         // Memory → frame driver
-        .vert_in(vert_data_out),
-        .idx_tri(idx_tri_out),
-        .transform_in(transform_out_mem),
+        .vert_in        (vert_data_out),
+        .idx_tri        (idx_tri_out),
+        .id_data        (id_data),
+        .transform_in   (transform_out_mem),
 
-        .curr_vert_base(curr_vert_base_out),
-        .curr_tri_base(curr_tri_base_out),
-        .curr_tri_count(curr_tri_count_out),
+        .curr_vert_base (curr_vert_base_out),
+        .curr_tri_base  (curr_tri_base_out),
+        .curr_tri_count (curr_tri_count_out),
 
         // Frame driver → model world transform
-        .out_ready(renderer_ready), //renderer_ready
-        .out_valid(transform_setup_valid),
+        .out_ready      (renderer_ready),
+        .out_valid      (transform_setup_valid),
         .transform_setup(transform_setup),
         
         // Frame driver ↔ razter/system
-        .draw_done(feed_done),
-        .busy(frame_driver_busy),
-        .draw_start(frame_start_render) // begin_frame
+        .frame_feed_done    (feed_done),    // Do i need to do anything with this ??
+        .frame_start_render (frame_start_render), // begin_frame
+        .back_color         (back_color),
+        .busy               (frame_driver_busy)
     );
     
 
@@ -410,12 +406,9 @@ module top_pcb #(
     // ----------------------------------------------------------------
     // Render manager (clear + triangles)
     // ----------------------------------------------------------------
-
     
     localparam color12_t CLEAR_COLOR = 12'h223;
     localparam int       FOCAL_LENGTH  = 256;
-
-    
 
     render_manager #(
         .WIDTH (FB_WIDTH),
@@ -516,6 +509,5 @@ module top_pcb #(
         vga_g     <= de_q ? g6 : 6'h0;
         vga_b     <= de_q ? b5 : 5'h0;
     end
-    
     
 endmodule

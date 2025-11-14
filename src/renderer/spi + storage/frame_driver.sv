@@ -27,9 +27,10 @@ module frame_driver #(
     output logic [7:0] inst_id_rd,
 
     // Memory inputs
-    input  transform_t       transform_in,
-    input  vertex_t          vert_in,
-    input  logic [TRI_W-1:0] idx_tri,
+    input  transform_t        transform_in,
+    input  vertex_t           vert_in,
+    input  logic [TRI_W-1:0]  idx_tri,
+    input  logic [ID_W*2-1:0] id_data,
 
     // Instance descriptor
     input  logic [$clog2(MAX_VERT)-1:0]  curr_vert_base,
@@ -39,17 +40,14 @@ module frame_driver #(
     // Frame driver ↔ Transform
     input  logic out_ready, // transform setup ready
     output logic out_valid, // used for when the whole setup is valid 
+    output logic [15:0]      back_color,
     output transform_setup_t transform_setup,
 
     // Frame driver ↔ rasterdizer (when done)!!
-    input  logic draw_start,
-    output logic draw_done,   // All instances done
+    input  logic frame_start_render,
+    output logic frame_feed_done,   // All instances done
     
-    output logic busy,
-    
-    output logic [7:0]      red_1_2,
-    output logic [3:0]      red_3
-    
+    output logic busy
 );
     // Internal registers
     logic [TIDX_W-1:0] tri_ctr;
@@ -106,8 +104,9 @@ module frame_driver #(
             vert_addr     <= '0;
             next_inst_id  <= '0;
             inst_id_rd    <= '0;
-            draw_done     <= '0;
             wait_ctr      <= '0;
+            back_color    <= 16'h2106; // default clear colour
+            frame_feed_done   <= '0;
             transform_setup_r <= '0;
         end else if(create_done_sync) begin
             // Default outputs per cycle
@@ -181,9 +180,10 @@ module frame_driver #(
 
                 OUTPUT_TRI: begin
                     if (inst_id_rd == 0 && out_ready) begin 
-                        transform_setup_r.camera_transform <= transform_in;
                         transform_setup_r.camera_transform_valid <= 1;
-                        out_valid <= 1;
+                        transform_setup_r.camera_transform       <= transform_in;
+                        back_color <= id_data;
+                        out_valid  <= 1;
                         if(out_valid == 1)
                             frame_state <= IDLE;
                         if(max_inst_sync == 0)
@@ -202,7 +202,7 @@ module frame_driver #(
                             frame_state <= IDLE;
                             // If all instances are done stop output
                             if(inst_id_rd == max_inst_sync) begin
-                                draw_done <= 1;
+                                frame_feed_done <= 1;
                                 next_inst_id <= 0;
                                 frame_state <= DONE;
                             end
@@ -210,9 +210,9 @@ module frame_driver #(
                     end
                 end
                 
-                DONE: if(draw_start) begin
+                DONE: if(frame_start_render) begin
                         frame_state <= IDLE;
-                        draw_done <= 0;
+                        frame_feed_done <= 0;
                 end
 
                 default: frame_state <= IDLE;
@@ -221,9 +221,4 @@ module frame_driver #(
     end
 
     assign transform_setup = transform_setup_r;
-    // slice the red of vertex 0 and 1
-    assign red_1_2 = {t_collect.v0.color[11:8], t_collect.v1.color[11:8]};
-    assign red_3   =  t_collect.v2.color[11:8];
-    
-
 endmodule

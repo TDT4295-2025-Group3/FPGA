@@ -60,9 +60,7 @@ module spi_driver #(
     
     // spi driver ↔ frame driver
     output logic [ID_W-1:0] max_inst,
-    output logic create_done,
-    
-    output logic [3:0] spi_state_out
+    output logic create_done
     );
     
     // spi tri-state logic
@@ -103,6 +101,7 @@ module spi_driver #(
     LOAD_INST_DATA, CREATE_INST, CREATE_INST_RESULT,
     LOAD_UPDATE_INST, UPDATE_INST, CREATE_NON_RESULT} spi_state;
     
+    // Read logic
     always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
             vert_ctr      <= 0;
@@ -144,7 +143,6 @@ module spi_driver #(
         end else if(sck_rise_pulse) begin 
             opcode_valid <= 0;
             read_done    <= 0;
-//            soft_reset_done_flag <= 0;
             if(!CS_n && CS_ready) begin
                 case(spi_state)
                     LOAD_OP: begin
@@ -309,7 +307,7 @@ module spi_driver #(
                             end
                         end
                     end
-                    // might want to handle error status
+                    
                     CREATE_INST: begin
                         if (nbl_ctr == (TRANS_W/4)-1) begin
                             transform_out <= {transform_out[TRANS_W-5:0], spi_in};
@@ -394,9 +392,10 @@ module spi_driver #(
         end
     end
     
+    // logic for max error handelig as well as frame driver max instance
     always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
-            max_inst <= 0; // there is at least one transform inst 
+            max_inst <= 0;
             max_vert <= 0;
             max_tri  <= 0;
         end else if (sck_rise_pulse) begin
@@ -436,6 +435,10 @@ module spi_driver #(
     
     logic [3:0] wait_ctr;
     logic       write_back;
+
+    // Wait 2 or 3 cycles after either read or writeback is done depending on 
+    // byte aligned reads.
+    // Here we use one byte (2 cycles) for padding and one nybble (1 cycle) if not aligned.
     always_ff @(posedge sck or posedge rst) begin
         if(rst) begin
             waiting  <= 0;
@@ -554,11 +557,5 @@ module spi_driver #(
             end
         end
     end
-    
-    assign spi_state_out = spi_state;
-//    assign error_status_test = error_status;
-//    assign ready_ctr_out = ready_ctr;
-//    assign CS_ready_out = CS_ready;
-//    assign wait_ctr_out = wait_ctr;
      
 endmodule

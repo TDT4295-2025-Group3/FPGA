@@ -65,12 +65,11 @@ module raster_mem #(
 
     output logic [TRI_W-1:0]  idx_tri_out,
     output vertex_t           vert_out,
-    output transform_t        transform_out
+    output transform_t        transform_out,
+    output logic [ID_W*2-1:0] id_data
 );
 
-    // =============================================
-    // Vertex and Triangle Data RAM (dual-port)
-    // =============================================
+    // Vertex and Triangle ram infered :D
     localparam VERT_ADDR_W = $clog2(MAX_VERT);
     localparam TRI_ADDR_W  = $clog2(MAX_TRI);
 
@@ -99,9 +98,7 @@ module raster_mem #(
         tri_out_r  <= tri_ram[tri_addr_rd];
     end
 
-    // =============================================
-    // Instance RAM (dual-port XPM)
-    // =============================================
+    // Instance RAM instantiated due to continous read/write on different clocks 
     logic inst_we;
     logic inst_edge_we;
     logic [INST_W-1:0] inst_din;
@@ -142,14 +139,9 @@ module raster_mem #(
         .doutb  (inst_dout_r)
     );
 
-    // =============================================
-    // Descriptor tables (now inferred RAM)
-    // =============================================
+    // Descriptor tables RAM infered 
     logic [VERT_ADDR_W-1:0] vert_table_rd_addr;
     logic [TRI_ADDR_W-1:0]  tri_table_rd_addr;
-
-//    vert_desc_t vert_table_r;
-//    tri_desc_t  tri_table_r;
 
     (* ram_style = "block" *) logic [VERT_ADDR_W+VIDX_W-1:0] vert_table_mem [0:MAX_VERT_BUF-1];
     (* ram_style = "block" *) logic [TRI_ADDR_W+TIDX_W-1:0]  tri_table_mem [0:MAX_TRI_BUF-1];
@@ -166,14 +158,14 @@ module raster_mem #(
         {curr_tri_base_out, curr_tri_count_out} <= tri_table_mem[tri_table_rd_addr];
     end
 
-    // =============================================
-    // FSM and write counters
-    // =============================================
+    // Counters for state machine
     logic [$clog2(MAX_VERT)-1:0] curr_vert_base;
     logic [VIDX_W-1:0]           curr_vert_count, vert_ctr;
     logic [$clog2(MAX_TRI)-1:0]  curr_tri_base;
     logic [TIDX_W-1:0]           curr_tri_count, tri_ctr;
 
+
+    // Memory state machine 
     enum logic [2:0] {IDLE, 
     CREATE_VERT_HDR, CREATE_VERT_DATA, 
     CREATE_TRI_HDR, CREATE_TRI_DATA, 
@@ -181,13 +173,13 @@ module raster_mem #(
 
     always_ff @(posedge sck or posedge rst_sck) begin
         if (rst_sck) begin
-            vert_ctr  <= 0; tri_ctr <= 0;
-            vert_we   <= 0; tri_we <= 0;
-            inst_we   <= 0;
+            vert_ctr       <= 0; tri_ctr <= 0;
+            vert_we        <= 0; tri_we <= 0;
+            inst_we        <= 0;
             curr_vert_base <= 0; curr_vert_count <= 0;
             curr_tri_base  <= 0; curr_tri_count  <= 0;
-            vert_addr_wr <= 0; tri_addr_wr <= 0;
-            inst_din <= 0;
+            vert_addr_wr   <= 0; tri_addr_wr <= 0;
+            inst_din       <= 0;
             mem_state <= IDLE;
         end else if (sck_rise_pulse) begin
             if (opcode_valid) begin
@@ -196,6 +188,7 @@ module raster_mem #(
                     4'b0010: mem_state <= CREATE_TRI_HDR;
                     4'b0011: mem_state <= CREATE_INST;
                     4'b0100: mem_state <= UPDATE_INST;
+                    default: mem_state <= IDLE;
                 endcase
             end
 
@@ -249,15 +242,14 @@ module raster_mem #(
         end
     end
 
-    // =============================================
     // Outputs
-    // =============================================
     assign vert_out    = vertex_t'(vert_out_r);
     assign idx_tri_out = tri_out_r;
 
     inst_t inst_cast;
-    assign inst_cast = inst_t'(inst_dout_r);
-    assign transform_out = transform_t'(inst_dout_r[TRANS_W+15:16]);
+    assign inst_cast     = inst_t'(inst_dout_r);
+    assign transform_out = transform_t'(inst_dout_r[TRANS_W+ID_W*2-1:ID_W*2]); // slice out the two IDs
+    assign id_data       = {inst_cast.vert_id, inst_cast.tri_id};
 
     // Descriptor outputs (synchronized)
     logic done_sync_0, done_sync_1;
