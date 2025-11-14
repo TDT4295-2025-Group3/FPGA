@@ -26,7 +26,7 @@ module render_manager #(
     output logic [15:0] out_pixel_x,
     output logic [15:0] out_pixel_y,
     output q16_16_t     out_depth,
-    output color12_t    out_color,
+    output color16_t    out_color,
     output logic        out_compare_depth,
     output logic        out_valid,
     input wire logic    out_ready,
@@ -114,7 +114,7 @@ module render_manager #(
     assign screen_filler_in_valid = screen_filler_start;
     logic [15:0]  screen_filler_x, screen_filler_y;
     q16_16_t screen_filler_depth;
-    color12_t screen_filler_color;
+    color16_t screen_filler_color;
     screen_filler #(
         .WIDTH (WIDTH),
         .HEIGHT(HEIGHT)
@@ -195,7 +195,7 @@ module render_manager #(
 
     logic [15:0]  rasterizer_x, rasterizer_y;
     q16_16_t rasterizer_depth;
-    color12_t rasterizer_color;
+    color16_t rasterizer_color;
     rasterizer #(
         .WIDTH (WIDTH),
         .HEIGHT(HEIGHT),

@@ -26,7 +26,7 @@ module rasterizer #(
     output      logic [$clog2(WIDTH)-1:0]  out_pixel_x,
     output      logic [$clog2(HEIGHT)-1:0] out_pixel_y,
     output      q16_16_t                   out_depth,
-    output      color12_t                  out_color,
+    output      color16_t                  out_color,
     output      logic                      out_valid,
     input  wire logic                      out_ready,
     output      logic                      busy
@@ -132,7 +132,7 @@ module rasterizer #(
     logic                      pe_out_valid;
     logic [$clog2(WIDTH)-1:0]  pe_out_x;
     logic [$clog2(HEIGHT)-1:0] pe_out_y;
-    color12_t                  pe_out_color;
+    color16_t                  pe_out_color;
     q16_16_t                   pe_out_depth;
     logic                      pe_busy;
 

@@ -174,7 +174,7 @@ module top_pcb #(
     logic [8:0]  fb_read_x;
     logic [7:0]  fb_read_y;
 
-    logic [11:0] fb_read_data;
+    color16_t fb_read_data;
 
     assign fb_read_x = sx[9:1];
     assign fb_read_y = sy[8:1];
@@ -184,7 +184,7 @@ module top_pcb #(
     // ----------------------------------------------------------------
     logic [15:0] rm_x16, rm_y16;
     q16_16_t     rm_depth;
-    logic [11:0] rm_color;
+    color16_t    rm_color;
     logic        rm_use_depth;
     logic        rm_out_valid;
     logic        renderer_busy;
@@ -400,7 +400,7 @@ module top_pcb #(
     // Depth buffer (inserted here)
     // ----------------------------------------------------------------
     logic [15:0] db_out_x, db_out_y;
-    logic [11:0] db_out_color;
+    color16_t    db_out_color;
     logic        db_out_valid;
 
     depthbuffer #(
@@ -467,19 +467,13 @@ module top_pcb #(
     // VGA output
     // ----------------------------------------------------------------
     logic de_q;
-    logic [4:0] r5;// = {r4, r4[3]};      // 4 bits -> 5 bits
-    logic [5:0] g6;// = {g4, g4[3:2]};    // 4 bits -> 6 bits
-    logic [4:0] b5;// = {b4, b4[3]};      // 4 bits -> 5 bits
-    assign r5 = {fb_read_data[11:8], fb_read_data[11]};
-    assign g6 = {fb_read_data[7:4], fb_read_data[7:6]};
-    assign b5 = {fb_read_data[3:0], fb_read_data[3]};
     always_ff @(posedge clk_pix) begin
         de_q      <= de;
         vga_hsync <= hsync;
         vga_vsync <= vsync;
-        vga_r     <= de_q ? r5 : 5'h0;
-        vga_g     <= de_q ? g6 : 6'h0;
-        vga_b     <= de_q ? b5 : 5'h0;
+        vga_r     <= de_q ? fb_read_data.r : 5'd0;
+        vga_g     <= de_q ? fb_read_data.g : 6'd0;
+        vga_b     <= de_q ? fb_read_data.b : 5'd0;
     end
 
 endmodule

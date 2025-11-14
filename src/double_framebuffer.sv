@@ -1,7 +1,7 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-import color_pkg::color12_t;
+import color_pkg::color16_t;  // or import color_pkg::*;
 
 module double_framebuffer #(
     parameter int FB_WIDTH  = 160,
@@ -16,12 +16,12 @@ module double_framebuffer #(
     input  wire logic        write_enable,
     input  wire logic [$clog2(FB_WIDTH)-1:0]  write_x,
     input  wire logic [$clog2(FB_HEIGHT)-1:0] write_y,
-    input  wire color12_t    write_data,
+    input  wire color16_t    write_data,
 
     // read side (VGA)
     input  wire logic [$clog2(FB_WIDTH)-1:0]  read_x,
     input  wire logic [$clog2(FB_HEIGHT)-1:0] read_y,
-    output      logic [11:0]                  read_data,
+    output      color16_t                     read_data,
 
     // SRAM Left (buffer A)
     output logic [20:0] sram_l_addr,
@@ -111,13 +111,6 @@ module double_framebuffer #(
 
     // ----------------------------------------------------------------
     // SRAM control signals split by domain
-    //
-    // For each chip we have:
-    //   *_wr: driven in clk_write (when that chip is back buffer)
-    //   *_rd: driven in clk_read  (when that chip is front buffer)
-    //
-    // At the bottom we mux them based on fb_write_select, so a chip
-    // is *either* written *or* read in a given frame, never both.
     // ----------------------------------------------------------------
 
     // Left chip (A) write-domain signals
@@ -154,8 +147,6 @@ module double_framebuffer #(
 
     // ----------------------------------------------------------------
     // WRITE DOMAIN (clk_write)
-    //   - Write one pixel per cycle to the "back buffer" chip
-    //   - No handshakes, no dropped writes
     // ----------------------------------------------------------------
     always_ff @(posedge clk_write or posedge rst) begin
         if (rst) begin
@@ -190,7 +181,7 @@ module double_framebuffer #(
                     FB_A: begin
                         // write to left chip A
                         sram_l_addr_wr   <= write_addr_ext;
-                        sram_l_dq_out_wr <= {4'h0, write_data};
+                        sram_l_dq_out_wr <= write_data;
                         sram_l_dq_oe_wr  <= 1'b1;
 
                         sram_l_cs_n_wr   <= 1'b0;
@@ -200,7 +191,7 @@ module double_framebuffer #(
                     FB_B: begin
                         // write to right chip B
                         sram_r_addr_wr   <= write_addr_ext;
-                        sram_r_dq_out_wr <= {4'h0, write_data};
+                        sram_r_dq_out_wr <= write_data;
                         sram_r_dq_oe_wr  <= 1'b1;
 
                         sram_r_cs_n_wr   <= 1'b0;
@@ -214,14 +205,9 @@ module double_framebuffer #(
 
     // ----------------------------------------------------------------
     // READ DOMAIN (clk_read)
-    //   Treat the front buffer chip as a simple async ROM,
-    //   and sample its dq each pixel.
-    //
-    //   This gives a *fixed* 1-pixel latency between read_addr
-    //   and read_data, similar to your old BRAM framebuffer.
+    //   Single-stage: address at cycle N, data used at cycle N+1,
+    //   matching the old BRAM semantics when combined with your de_q.
     // ----------------------------------------------------------------
-    logic [11:0] read_data_A, read_data_B;
-
     always_ff @(posedge clk_read or posedge rst) begin
         if (rst) begin
             // A
@@ -229,16 +215,15 @@ module double_framebuffer #(
             sram_l_cs_n_rd <= 1'b1;
             sram_l_we_n_rd <= 1'b1;
             sram_l_oe_n_rd <= 1'b1;
-            read_data_A    <= 12'h000;
-
             // B
             sram_r_addr_rd <= 21'd0;
             sram_r_cs_n_rd <= 1'b1;
             sram_r_we_n_rd <= 1'b1;
             sram_r_oe_n_rd <= 1'b1;
-            read_data_B    <= 12'h000;
+
+            read_data      <= '{default: 0};
         end else begin
-            // Default: neither chip selected from read side
+            // default: neither chip selected from read side
             sram_l_cs_n_rd <= 1'b1;
             sram_l_we_n_rd <= 1'b1;
             sram_l_oe_n_rd <= 1'b1;
@@ -247,16 +232,16 @@ module double_framebuffer #(
             sram_r_we_n_rd <= 1'b1;
             sram_r_oe_n_rd <= 1'b1;
 
-            // Front-buffer read
+            // front-buffer read
             case (fb_read_select)
                 FB_A: begin
-                    // Drive address for A and sample its data for *previous* address
                     sram_l_addr_rd <= read_addr_ext;
                     sram_l_cs_n_rd <= 1'b0;
                     sram_l_we_n_rd <= 1'b1; // read-only
                     sram_l_oe_n_rd <= 1'b0;
 
-                    read_data_A <= sram_l_dq[11:0];
+                    // sample A's data (for previous address)
+                    read_data <= sram_l_dq;
                 end
                 FB_B: begin
                     sram_r_addr_rd <= read_addr_ext;
@@ -264,32 +249,15 @@ module double_framebuffer #(
                     sram_r_we_n_rd <= 1'b1; // read-only
                     sram_r_oe_n_rd <= 1'b0;
 
-                    read_data_B <= sram_r_dq[11:0];
+                    // sample B's data
+                    read_data <= sram_r_dq;
                 end
-            endcase
-        end
-    end
-
-    // Final mux of A/B into read_data (still clk_read domain)
-    always_ff @(posedge clk_read or posedge rst) begin
-        if (rst)
-            read_data <= 12'h000;
-        else begin
-            case (fb_read_select)
-                FB_A: read_data <= read_data_A;
-                FB_B: read_data <= read_data_B;
             endcase
         end
     end
 
     // ----------------------------------------------------------------
     // Top-level pin muxing
-    //
-    // Only one domain actively controls each chip at a time:
-    //   - If fb_write_select == FB_A, chip A is back-buffer (write-only)
-    //     so we use *_wr for A, *_rd for B.
-    //   - If fb_write_select == FB_B, chip B is back-buffer (write-only)
-    //     so we use *_wr for B, *_rd for A.
     // ----------------------------------------------------------------
     always_comb begin
         if (fb_write_select == FB_A) begin

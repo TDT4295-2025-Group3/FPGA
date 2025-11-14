@@ -18,7 +18,7 @@ module screen_filler #(
 
     output logic [15:0] out_pixel_x,
     output logic [15:0] out_pixel_y,
-    output color12_t    out_color,
+    output color16_t    out_color,
     output logic            out_valid,
     input  wire logic       out_ready,
     output logic            busy
@@ -27,7 +27,7 @@ module screen_filler #(
     typedef enum logic [0:0] {IDLE, RUN} state_t;
     state_t state, next_state;
 
-    color12_t color_reg;
+    color16_t color_reg;
 
     logic [15:0] current_x, current_y;
     logic [15:0] next_x,    next_y;
@@ -93,7 +93,11 @@ module screen_filler #(
             current_y <= next_y;
 
             if (in_valid && in_ready) begin
-                color_reg <= fill_color;
+                color_reg <= { // convert to 16-bit color
+                    {fill_color[11:8], fill_color[11]},  
+                    {fill_color[7:4],  fill_color[7:6]},   
+                    {fill_color[3:0],  fill_color[3]}      
+                };
             end
 
             if (state == RUN && can_emit) begin

@@ -2,7 +2,7 @@
 `timescale 1ns / 1ps
 
 import math_pkg::*;
-import color_pkg::color12_t;
+import color_pkg::color16_t;
 
 module depthbuffer #(
     parameter int FB_WIDTH  = 160,
@@ -13,13 +13,13 @@ module depthbuffer #(
 
     input wire logic in_valid,
     input wire logic in_compare_depth,
-    input wire color12_t in_color,
+    input wire color16_t in_color,
     input wire q16_16_t in_depth,
     input wire [15:0] in_x,
     input wire [15:0] in_y,
 
     output logic out_valid,
-    output color12_t out_color,
+    output color16_t out_color,
     output logic [15:0] out_x,
     output logic [15:0] out_y
 );
@@ -34,7 +34,7 @@ module depthbuffer #(
     // pipeline aligners for inputs (to match BRAM read latency)
     logic        in_valid_s1,         in_valid_s2;
     logic        in_compare_depth_s1, in_compare_depth_s2;
-    color12_t    in_color_s1,         in_color_s2;
+    color16_t    in_color_s1,         in_color_s2;
     q16_16_t     in_depth_s1,         in_depth_s2;
     logic [15:0] in_x_s1,             in_x_s2;
     logic [15:0] in_y_s1,             in_y_s2;
