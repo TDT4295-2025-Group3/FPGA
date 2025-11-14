@@ -2,6 +2,7 @@
 import transformer_pkg::*;
 import buffer_id_pkg::*;
 import vertex_pkg::*;
+import color_pkg::*;
 `default_nettype wire
 
 module frame_driver #(
@@ -40,7 +41,7 @@ module frame_driver #(
     // Frame driver ↔ Transform
     input  logic out_ready, // transform setup ready
     output logic out_valid, // used for when the whole setup is valid 
-    output logic [15:0]      back_color,
+    output color12_t         background_color,
     output transform_setup_t transform_setup,
 
     // Frame driver ↔ rasterdizer (when done)!!
@@ -105,14 +106,14 @@ module frame_driver #(
             next_inst_id  <= '0;
             inst_id_rd    <= '0;
             wait_ctr      <= '0;
-            back_color    <= 16'h2106; // default clear colour
+            background_color  <= 12'hFFF;    // 12'h223; default clear colour
             frame_feed_done   <= '0;
             transform_setup_r <= '0;
         end else if(create_done_sync) begin
             // Default outputs per cycle
             out_valid <= '0;
-            vert_addr  <= '0;
-            tri_addr   <= '0;
+            vert_addr <= '0;
+            tri_addr  <= '0;
             transform_setup_r.model_transform_valid  <= '0;
             transform_setup_r.camera_transform_valid  <= '0;
 
@@ -182,7 +183,7 @@ module frame_driver #(
                     if (inst_id_rd == 0 && out_ready) begin 
                         transform_setup_r.camera_transform_valid <= 1;
                         transform_setup_r.camera_transform       <= transform_in;
-                        back_color <= id_data;
+                        background_color                         <= id_data[11:0];
                         out_valid  <= 1;
                         if(out_valid == 1)
                             frame_state <= IDLE;

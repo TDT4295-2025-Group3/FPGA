@@ -169,7 +169,7 @@ module top_pcb #(
     // Frame driver ↔ raster/system
     logic         feed_done;
     logic         frame_driver_busy;
-    logic [15:0]  back_color;
+    color12_t     background_color;
 
     // Transform_setup ↔ model_world
     model_world_t out_model_world;
@@ -335,8 +335,8 @@ module top_pcb #(
         
         // Frame driver ↔ razter/system
         .frame_feed_done    (feed_done),    // Do i need to do anything with this ??
-        .frame_start_render (frame_start_render), // begin_frame
-        .back_color         (back_color),
+        .frame_start_render (frame_start_render),  // begin_frame
+        .background_color   (background_color),
         .busy               (frame_driver_busy)
     );
     
@@ -400,7 +400,7 @@ module top_pcb #(
         if (rst_render)
             begin_frame <= 1'b0;
         else
-            begin_frame <= frame_start_render && !renderer_busy;  // && !frame_driver_busy;
+            begin_frame <= frame_start_render && !renderer_busy && !frame_driver_busy;
     end
 
     // ----------------------------------------------------------------
@@ -428,7 +428,7 @@ module top_pcb #(
         .triangle_valid   (transform_setup_valid),
         .triangle_ready   (renderer_ready),
 
-        .fill_color       (CLEAR_COLOR),
+        .fill_color       (background_color),
         .fill_valid       (1'b1),
         .fill_ready       (/* unused */),
 
