@@ -26,6 +26,7 @@ module frame_driver #(
     output logic [$clog2(MAX_VERT)-1:0] vert_addr,
     output logic [$clog2(MAX_TRI)-1:0]  tri_addr,
     output logic [7:0] inst_id_rd,
+    output logic       capture_inst,
 
     // Memory inputs
     input  transform_t        transform_in,
@@ -58,6 +59,8 @@ module frame_driver #(
     logic [ID_W-1:0] max_inst_sync;
     logic create_done_sync_0;
     logic create_done_sync;
+    logic color_flag;
+    transform_t transform_reg;
     
     always_ff @(posedge clk or posedge rst) begin 
         if(rst) begin 
@@ -106,120 +109,132 @@ module frame_driver #(
             next_inst_id  <= '0;
             inst_id_rd    <= '0;
             wait_ctr      <= '0;
+            color_flag    <= '0;
+            capture_inst   <= '0;
             background_color  <= 12'hFFF;    // 12'h223; default clear colour
             frame_feed_done   <= '0;
             transform_setup_r <= '0;
-        end else if(create_done_sync) begin
-            // Default outputs per cycle
-            out_valid <= '0;
-            vert_addr <= '0;
-            tri_addr  <= '0;
-            transform_setup_r.model_transform_valid  <= '0;
-            transform_setup_r.camera_transform_valid  <= '0;
+        end else begin 
+            if(!color_flag) begin
+                background_color  <= 12'hFFF;
+                color_flag <= 1;
+            end
+            if(create_done_sync) begin
+                // Default outputs per cycle
+                out_valid <= '0;
+                vert_addr <= '0;
+                tri_addr  <= '0;
+                transform_setup_r.model_transform_valid  <= '0;
+                transform_setup_r.camera_transform_valid  <= '0;
 
-            // NP: need to wait +2 cycles: +1 load_addr +1 ram_out, to acces ram data
-            case (frame_state)
-                IDLE: begin
-                    if (out_ready) begin
-                        next_inst_id <= next_inst_id +1;
-                        inst_id_rd   <= next_inst_id;
-                        frame_state <= LOAD_BASE;
+                // NP: need to wait +2 cycles: +1 load_addr +1 ram_out, to acces ram data
+                case (frame_state)
+                    IDLE: begin
+                        if (out_ready) begin
+                            next_inst_id <= next_inst_id +1;
+                            inst_id_rd   <= next_inst_id;
+                            frame_state <= LOAD_BASE;
+                        end
                     end
-                end
-                
-                // ctr 0: inst_dout_r   <= inst_ram[inst_id];
-                // ctr 1: wait?
-                // ctr 2: curr_tri_base <= tri_table_ram[inst_dout_r.base];
-                LOAD_BASE: begin
-                    if(wait_ctr == 2) begin
-                        wait_ctr <= 0;
-                        frame_state <= REQUEST_TRI;
-                        if(inst_id_rd == 0)
-                            frame_state <= OUTPUT_TRI;
-                    end else 
-                        wait_ctr <= wait_ctr+1;
                     
-                end
-
-                REQUEST_TRI: begin
-                    tri_addr <= curr_tri_base + tri_ctr;
-                    frame_state <= LOAD_TRI;
-                end
-                
-                // idx_tri <= tri_ram[tri_addr];
-                LOAD_TRI: begin
-                    frame_state <= WAIT_TRI;
-                end
-                
-                WAIT_TRI: begin
-                    idx_tri_reg <= idx_tri;
-                    vert_addr <= curr_vert_base + idx_tri[3*VIDX_W-1:2*VIDX_W]; // request v0
-                    frame_state <= WAIT_VERT;
-                end
-                
-                // vert_in <= vert_ram[vert_addr];
-                WAIT_VERT: begin
-                    frame_state <= CAPTURE_V0;
-                    vert_addr <= curr_vert_base + idx_tri_reg[2*VIDX_W-1:VIDX_W]; // request v1
-                end
-
-                CAPTURE_V0: begin
-                    t_collect.v0 <= vert_in;
-                    frame_state <= CAPTURE_V1;
-                    vert_addr <= curr_vert_base + idx_tri_reg[VIDX_W-1:0]; // request v2
-                end
-
-                CAPTURE_V1: begin
-                    t_collect.v1 <= vert_in;
-                    frame_state <= CAPTURE_V2;
-                end
-
-                CAPTURE_V2: begin
-                    t_collect.v2 <= vert_in;
-                    frame_state <= OUTPUT_TRI;
-                end
-
-                OUTPUT_TRI: begin
-                    if (inst_id_rd == 0 && out_ready) begin 
-                        transform_setup_r.camera_transform_valid <= 1;
-                        transform_setup_r.camera_transform       <= transform_in;
-                        background_color                         <= id_data[11:0];
-                        out_valid  <= 1;
-                        if(out_valid == 1)
-                            frame_state <= IDLE;
-                        if(max_inst_sync == 0)
-                            next_inst_id <= 0;
-                    end else if (inst_id_rd != 0 && out_ready) begin
-                        transform_setup_r.triangle <= t_collect;
-                        transform_setup_r.model_transform <= transform_in;
-                        transform_setup_r.model_transform_valid <= 1;
-                        out_valid <= 1;
-                        
-                        if (tri_ctr < curr_tri_count - 1) begin
-                            tri_ctr <= tri_ctr + 1;
+                    // ctr 0: inst_dout_r   <= inst_ram[inst_id];
+                    // ctr 1: wait?
+                    // ctr 2: curr_tri_base <= tri_table_ram[inst_dout_r.base];
+                    LOAD_BASE: begin
+                        if(wait_ctr == 2) begin
+                            wait_ctr <= 0;
                             frame_state <= REQUEST_TRI;
-                        end else begin
-                            tri_ctr <= 0;
-                            frame_state <= IDLE;
-                            // If all instances are done stop output
-                            if(inst_id_rd == max_inst_sync) begin
-                                frame_feed_done <= 1;
+                            if(inst_id_rd == 0)
+                                frame_state <= OUTPUT_TRI;
+                        end else if(wait_ctr == 1)begin
+                            wait_ctr      <= wait_ctr+1;
+                            capture_inst  <= 0;
+                            transform_reg <= transform_in;
+                        end else if(wait_ctr == 0) begin
+                            capture_inst  <= 1;
+                            wait_ctr      <= wait_ctr+1;
+                        end 
+                    end
+
+                    REQUEST_TRI: begin
+                        tri_addr <= curr_tri_base + tri_ctr;
+                        frame_state <= LOAD_TRI;
+                    end
+                    
+                    // idx_tri <= tri_ram[tri_addr];
+                    LOAD_TRI: begin
+                        frame_state <= WAIT_TRI;
+                    end
+                    
+                    WAIT_TRI: begin
+                        idx_tri_reg <= idx_tri;
+                        vert_addr <= curr_vert_base + idx_tri[3*VIDX_W-1:2*VIDX_W]; // request v0
+                        frame_state <= WAIT_VERT;
+                    end
+                    
+                    // vert_in <= vert_ram[vert_addr];
+                    WAIT_VERT: begin
+                        frame_state <= CAPTURE_V0;
+                        vert_addr <= curr_vert_base + idx_tri_reg[2*VIDX_W-1:VIDX_W]; // request v1
+                    end
+
+                    CAPTURE_V0: begin
+                        t_collect.v0 <= vert_in;
+                        frame_state <= CAPTURE_V1;
+                        vert_addr <= curr_vert_base + idx_tri_reg[VIDX_W-1:0]; // request v2
+                    end
+
+                    CAPTURE_V1: begin
+                        t_collect.v1 <= vert_in;
+                        frame_state <= CAPTURE_V2;
+                    end
+
+                    CAPTURE_V2: begin
+                        t_collect.v2 <= vert_in;
+                        frame_state <= OUTPUT_TRI;
+                    end
+
+                    OUTPUT_TRI: begin
+                        if (inst_id_rd == 0 && out_ready) begin 
+                            transform_setup_r.camera_transform_valid <= 1;
+                            transform_setup_r.camera_transform       <= transform_in;
+                            background_color                         <= id_data[11:0];
+                            out_valid  <= 1;
+                            if(out_valid == 1)
+                                frame_state <= IDLE;
+                            if(max_inst_sync == 0)
                                 next_inst_id <= 0;
-                                frame_state <= DONE;
+                        end else if (inst_id_rd != 0 && out_ready) begin
+                            transform_setup_r.triangle <= t_collect;
+                            transform_setup_r.model_transform <= transform_in;
+                            transform_setup_r.model_transform_valid <= 1;
+                            out_valid <= 1;
+                            
+                            if (tri_ctr < curr_tri_count - 1) begin
+                                tri_ctr <= tri_ctr + 1;
+                                frame_state <= REQUEST_TRI;
+                            end else begin
+                                tri_ctr <= 0;
+                                frame_state <= IDLE;
+                                // If all instances are done stop output
+                                if(inst_id_rd == max_inst_sync) begin
+                                    frame_feed_done <= 1;
+                                    next_inst_id <= 0;
+                                    frame_state <= DONE;
+                                end
                             end
                         end
                     end
-                end
-                
-                DONE: if(frame_start_render) begin
-                        frame_state <= IDLE;
-                        frame_feed_done <= 0;
-                end
+                    
+                    DONE: if(frame_start_render) begin
+                            frame_state <= IDLE;
+                            frame_feed_done <= 0;
+                    end
 
-                default: frame_state <= IDLE;
-            endcase
+                    default: frame_state <= IDLE;
+                endcase
+            end
         end
     end
-
     assign transform_setup = transform_setup_r;
 endmodule

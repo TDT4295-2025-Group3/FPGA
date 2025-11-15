@@ -72,8 +72,6 @@ module top_pcb #(
     logic clk_locked;
 
     // new per-domain synchronous resets
-    logic rst_100m;
-    logic rst_render;
     logic rst;
     logic rst_100m_locked;
     logic rst_render_locked;
@@ -106,7 +104,7 @@ module top_pcb #(
         .sck_rise_pulse(sck_rise_pulse),
         .sck_fall_pulse(sck_fall_pulse)
     );
-
+ 
     
     logic soft_reset;
     logic rst_protect;
@@ -171,6 +169,7 @@ module top_pcb #(
     logic [$clog2(MAX_INST)-1:0] inst_id_rd;
     logic [$clog2(MAX_VERT)-1:0] vert_addr_rd;
     logic [$clog2(MAX_TRI)-1:0]  tri_addr_rd;
+    logic                        capture_inst;
 
     logic [$clog2(MAX_VERT)-1:0] curr_vert_base_out;
     logic [VIDX_W-1:0]           curr_vert_count_out;
@@ -300,9 +299,10 @@ module top_pcb #(
         .transform_in   (transform_out_spi),
         .inst_id_in     (inst_id_out),
 
-        .inst_id_rd     (inst_id_rd),
-        .vert_addr_rd   (vert_addr_rd),
-        .tri_addr_rd    (tri_addr_rd),
+        .inst_id_rd      (inst_id_rd),
+        .vert_addr_rd    (vert_addr_rd),
+        .tri_addr_rd     (tri_addr_rd),
+        .capture_inst (capture_inst),
 
         .curr_vert_base_out  (curr_vert_base_out),
         .curr_vert_count_out (curr_vert_count_out),
@@ -334,9 +334,10 @@ module top_pcb #(
         .create_done    (create_done),
 
         // Frame driver → memory
-        .vert_addr      (vert_addr_rd),
-        .tri_addr       (tri_addr_rd),
-        .inst_id_rd     (inst_id_rd),
+        .vert_addr       (vert_addr_rd),
+        .tri_addr        (tri_addr_rd),
+        .inst_id_rd       (inst_id_rd),
+        .capture_inst (capture_inst),
 
         // Memory → frame driver
         .vert_in        (vert_data_out),

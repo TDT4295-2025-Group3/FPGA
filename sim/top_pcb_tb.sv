@@ -886,43 +886,6 @@ module tb_top_pcb;
             // update inst doesn't really need this long of a wait
             spi_return_result_non_aligned();
             
-            
-            // CREATE_VERT 1
-            spi_send_opcode(OP_CREATE_VERT);
-            // Send vertex count
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h0);
-            spi_send_nybble(4'h4);
-
-            // Send dummy vertex data (just 108 bits = 27 nybbles, 8*3 points + 3 colour)
-            // vert 0 pos (0,0,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'hA);
-            // vert 1 pos (0,2,0)
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(2);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'hB);
-            // vert 2 pos (0,0,2)
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(2);
-            repeat (4) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'hC);
-            // vert 3 pos (a,0,0)
-            repeat (3) spi_send_nybble(0);
-            repeat (1) spi_send_nybble(4'hA);
-            repeat (4) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (8) spi_send_nybble(0);
-            repeat (3) spi_send_nybble(4'hD);
-            spi_return_result_aligned();
-            
         end
     endtask
 

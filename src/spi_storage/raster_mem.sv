@@ -57,6 +57,7 @@ module raster_mem #(
     input  logic [$clog2(MAX_INST)-1:0] inst_id_rd,
     input  logic [$clog2(MAX_VERT)-1:0] vert_addr_rd,
     input  logic [$clog2(MAX_TRI)-1:0]  tri_addr_rd,
+    input  logic                        capture_inst,
 
     output logic [$clog2(MAX_VERT)-1:0] curr_vert_base_out,
     output logic [VIDX_W-1:0]           curr_vert_count_out,
@@ -130,6 +131,7 @@ module raster_mem #(
         .addra  (inst_id_in),
         .dina   (inst_din),
         .douta  (inst_dout_a),
+        
         .clkb   (clk),
         .rstb   (rst_render),
         .enb    (1'b1),
@@ -261,7 +263,7 @@ module raster_mem #(
             done_sync_0 <= create_done;
             done_sync_1 <= done_sync_0;
 
-            if (done_sync_1) begin
+            if (done_sync_1 && capture_inst) begin
                 vert_table_rd_addr <= inst_cast.vert_id;
                 tri_table_rd_addr  <= inst_cast.tri_id;
             end
