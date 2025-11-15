@@ -38,13 +38,13 @@ module transform_setup (
     // Choose sin/cos from right transform
     always_comb begin
         if (transform_setup_r.camera_transform_valid) begin
-            sx = transform_setup_r.camera_transform.rot_sin.x; cy = transform_setup_r.camera_transform.rot_cos.y;
-            cx = transform_setup_r.camera_transform.rot_cos.x; sz = transform_setup_r.camera_transform.rot_sin.z;
-            sy = transform_setup_r.camera_transform.rot_sin.y; cz = transform_setup_r.camera_transform.rot_cos.z;
+            sx = -transform_setup_r.camera_transform.rot_sin.x; cy = transform_setup_r.camera_transform.rot_cos.y;
+            cx = transform_setup_r.camera_transform.rot_cos.x; sz = -transform_setup_r.camera_transform.rot_sin.z;
+            sy = -transform_setup_r.camera_transform.rot_sin.y; cz = transform_setup_r.camera_transform.rot_cos.z;
         end else if (transform_setup_r.model_transform_valid) begin
-            sx = transform_setup_r.model_transform.rot_sin.x;  cy = transform_setup_r.model_transform.rot_cos.y;
-            cx = transform_setup_r.model_transform.rot_cos.x;  sz = transform_setup_r.model_transform.rot_sin.z;
-            sy = transform_setup_r.model_transform.rot_sin.y;  cz = transform_setup_r.model_transform.rot_cos.z;
+            sx = -transform_setup_r.model_transform.rot_sin.x;  cy = transform_setup_r.model_transform.rot_cos.y;
+            cx = transform_setup_r.model_transform.rot_cos.x;  sz = -transform_setup_r.model_transform.rot_sin.z;
+            sy = -transform_setup_r.model_transform.rot_sin.y;  cz = transform_setup_r.model_transform.rot_cos.z;
         end else begin
             sx = '0; cy = '0;
             cx = '0; sz = '0;
