@@ -1,9 +1,9 @@
 `default_nettype none
 `timescale 1ns / 1ps
 
-module top_pcb #(
-    parameter MAX_VERT  = 8192,     // 2^13 bit = 8192, 
-    parameter MAX_TRI   = 8192,     // 2^13 bit = 8192,
+module top_pcb #( // 12_000 brukte 150 tiles
+    parameter MAX_VERT  = 16_384,     // 2^13 bit = 8192,  
+    parameter MAX_TRI   = 16_384,     // 2^13 bit = 8192,  2^14 bit = 16_384
     parameter MAX_INST  = 256,      // maximum instences
     parameter SCK_FILTER    = 50,    // Min filter period for edge detection, we want n_max = T_raw/(2*T_ref)
     localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
@@ -482,7 +482,8 @@ module top_pcb #(
     depthbuffer #(
         .FB_WIDTH (FB_WIDTH),
         .FB_HEIGHT(FB_HEIGHT),
-        .DEPTH_BITS(N_BITS_FOR_DEPTH)
+        .DEPTH_BITS(N_BITS_FOR_DEPTH),
+        .BITS_ACCURACY_DROP(5)
     ) depthbuffer_inst (
         .clk             (clk_render),
         .rst             (rst_render),

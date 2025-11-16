@@ -197,7 +197,7 @@ module frame_driver #(
                     OUTPUT_TRI: begin
                         if (inst_id_rd == 0 && out_ready) begin 
                             transform_setup_r.camera_transform_valid <= 1;
-                            transform_setup_r.camera_transform       <= transform_in;
+                            transform_setup_r.camera_transform       <= transform_reg;
                             background_color                         <= id_data[11:0];
                             out_valid  <= 1;
                             if(out_valid == 1)
@@ -206,7 +206,7 @@ module frame_driver #(
                                 next_inst_id <= 0;
                         end else if (inst_id_rd != 0 && out_ready) begin
                             transform_setup_r.triangle <= t_collect;
-                            transform_setup_r.model_transform <= transform_in;
+                            transform_setup_r.model_transform <= transform_reg;
                             transform_setup_r.model_transform_valid <= 1;
                             out_valid <= 1;
                             

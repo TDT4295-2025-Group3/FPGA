@@ -269,5 +269,4 @@ module raster_mem #(
             end
         end
     end
-
 endmodule
