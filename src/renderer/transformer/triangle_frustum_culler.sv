@@ -31,16 +31,6 @@ module triangle_frustum_culler #(
     localparam int WIDTH_Q16_16      = WIDTH      << 16;
     localparam int HEIGHT_Q16_16     = HEIGHT     << 16;
 
-    function automatic logic vertex_in_frustum(input vertex_t v);
-        begin
-            vertex_in_frustum =
-                (v.pos.z >= NEAR_PLANE_Q16_16) &&
-                (v.pos.z <= FAR_PLANE_Q16_16)  &&
-                (v.pos.x >= 0) && (v.pos.x <= WIDTH_Q16_16) &&
-                (v.pos.y >= 0) && (v.pos.y <= HEIGHT_Q16_16);
-        end
-    endfunction
-
     function automatic logic behind_zero(input triangle_t t);
         begin
             behind_zero = 
@@ -50,15 +40,47 @@ module triangle_frustum_culler #(
         end
     endfunction
 
+    // Check if triangle is outside a plane, if triangle is not outside then don't cull
     function automatic logic triangle_in_frustum(input triangle_t t);
-        begin
-            triangle_in_frustum =
-                vertex_in_frustum(t.v0) ||
-                vertex_in_frustum(t.v1) ||
-                vertex_in_frustum(t.v2);
-        end
-    endfunction
+        // Left
+        if ((t.v0.pos.x < 0) &&
+            (t.v1.pos.x < 0) &&
+            (t.v2.pos.x < 0))
+            return 0;
 
+        // Right
+        if ((t.v0.pos.x > WIDTH_Q16_16) &&
+            (t.v1.pos.x > WIDTH_Q16_16) &&
+            (t.v2.pos.x > WIDTH_Q16_16))
+            return 0;
+
+        // Top
+        if ((t.v0.pos.y < 0) &&
+            (t.v1.pos.y < 0) &&
+            (t.v2.pos.y < 0))
+            return 0;
+
+        // Bottom
+        if ((t.v0.pos.y > HEIGHT_Q16_16) &&
+            (t.v1.pos.y > HEIGHT_Q16_16) &&
+            (t.v2.pos.y > HEIGHT_Q16_16))
+            return 0;
+
+        // Near
+        if ((t.v0.pos.z < NEAR_PLANE_Q16_16) &&
+            (t.v1.pos.z < NEAR_PLANE_Q16_16) &&
+            (t.v2.pos.z < NEAR_PLANE_Q16_16))
+            return 0;
+
+        // Far
+        if ((t.v0.pos.z > FAR_PLANE_Q16_16) &&
+            (t.v1.pos.z > FAR_PLANE_Q16_16) &&
+            (t.v2.pos.z > FAR_PLANE_Q16_16))
+            return 0;
+
+        // Some part of the triangle is inside or touching the frustum
+        return 1;
+    endfunction
 
 
     triangle_t triangle_reg;

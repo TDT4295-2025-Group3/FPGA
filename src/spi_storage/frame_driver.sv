@@ -112,14 +112,10 @@ module frame_driver #(
             wait_ctr      <= '0;
             color_flag    <= '0;
             capture_inst   <= '0;
-            color_reg         <= 12'hFFF;
             background_color  <= 12'hFFF;    // 12'h223; default clear colour
             frame_feed_done   <= '0;
             transform_setup_r <= '0;
         end else begin 
-//            background_color  <= 12'hFFF;
-//            if(color_flag) 
-//                background_color <= color_reg;
             if(create_done_sync) begin
                 // Default outputs per cycle
                 out_valid <= '0;
@@ -199,7 +195,7 @@ module frame_driver #(
                         if (inst_id_rd == 0 && out_ready) begin 
                             transform_setup_r.camera_transform_valid <= 1;
                             transform_setup_r.camera_transform       <= transform_reg;
-                            background_color                         <= id_data[11:0]; // color_reg
+                            background_color                         <= id_data[11:0];
                             out_valid  <= 1;
                             color_flag <= 1;
                             if(out_valid == 1)
