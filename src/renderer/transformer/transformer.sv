@@ -92,7 +92,6 @@ module transformer #(
         .in_valid     (wc_out_valid),
         .in_ready     (wc_out_ready),
 
-
         .out_triangle (tp_out_triangle),
         .out_valid    (tp_out_valid),
         .out_ready    (tp_out_ready),

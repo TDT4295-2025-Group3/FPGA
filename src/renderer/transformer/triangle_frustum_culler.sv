@@ -41,6 +41,15 @@ module triangle_frustum_culler #(
         end
     endfunction
 
+    function automatic logic behind_zero(input triangle_t t);
+        begin
+            behind_zero = 
+                (t.v0.pos.z < 0) ||
+                (t.v1.pos.z < 0) ||
+                (t.v2.pos.z < 0);
+        end
+    endfunction
+
     function automatic logic triangle_in_frustum(input triangle_t t);
         begin
             triangle_in_frustum =
@@ -49,6 +58,8 @@ module triangle_frustum_culler #(
                 vertex_in_frustum(t.v2);
         end
     endfunction
+
+
 
     triangle_t triangle_reg;
     logic       valid_reg;
@@ -73,5 +84,4 @@ module triangle_frustum_culler #(
             end
         end
     end
-    
 endmodule

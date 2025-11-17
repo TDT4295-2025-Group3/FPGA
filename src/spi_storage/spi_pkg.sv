@@ -21,11 +21,9 @@ endpackage
 // insetance use 32 * 4*3 + 8 * 2 = 400
 package buffer_id_pkg;
     import math_pkg::point3d_t;
+    import vertex_pkg::transform_t;
     typedef struct packed {
-        point3d_t pos;
-        point3d_t sin_rot;
-        point3d_t cos_rot;
-        point3d_t scale;
+        transform_t transform;
         logic [8-1:0] vert_id;  // Max 256 distinct buffers
         logic [8-1:0] tri_id;
     } inst_t;

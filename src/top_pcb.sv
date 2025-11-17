@@ -452,7 +452,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
         .clk              (clk_render),
         .rst              (rst_render),
 
-        .begin_frame      (frame_start_render),
+        .begin_frame      (frame_start_render), 
 
         .transform_setup  (transform_setup),
         .triangle_valid   (transform_setup_valid),

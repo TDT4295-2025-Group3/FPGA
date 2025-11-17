@@ -103,7 +103,7 @@ module screen_filler #(
             if (state == RUN && can_emit) begin
                 x_reg        <= current_x;
                 y_reg        <= current_y;
-                valid_reg        <= 1'b1;
+                valid_reg    <= 1'b1;
             end else if (fire_out) begin
                 valid_reg <= 1'b0;
             end

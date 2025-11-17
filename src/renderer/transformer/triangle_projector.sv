@@ -14,6 +14,7 @@ module triangle_projector#(
     output logic      in_ready,
 
     output triangle_t out_triangle,
+    output logic      triangle_clamped,
     output logic      out_valid,
     input  logic      out_ready,
     output logic      busy
@@ -34,6 +35,9 @@ module triangle_projector#(
     // Handshake helper signals (local to this module)
     wire all_valid   = v0_valid && v1_valid && v2_valid;
     wire tp_out_ready = out_ready && all_valid;
+
+    triangle_t clam_triangle;
+    assign clam_triangle = clamp_triangle(triangle);
     
     vertex_projector #(
         .FOCAL_LENGTH(FOCAL_LENGTH)
@@ -41,7 +45,7 @@ module triangle_projector#(
         .clk(clk),
         .rst(rst),
         
-        .vertex(triangle.v0),
+        .vertex(clam_triangle.v0),
         .in_valid(in_valid),
         .in_ready(v0_ready),
         
@@ -57,7 +61,7 @@ module triangle_projector#(
         .clk(clk),
         .rst(rst),
         
-        .vertex(triangle.v1),
+        .vertex(clam_triangle.v1),
         .in_valid(in_valid),
         .in_ready(v1_ready),
         
@@ -74,7 +78,7 @@ module triangle_projector#(
         .clk(clk),
         .rst(rst),
         
-        .vertex(triangle.v2),
+        .vertex(clam_triangle.v2),
         .in_valid(in_valid),
         .in_ready(v2_ready),
         
@@ -83,8 +87,35 @@ module triangle_projector#(
         .out_ready(tp_out_ready),
         .busy(v2_busy)
     );
+
+    localparam int NEAR_PLANE_Q16_16 = 1 << 16; // NEAR_PLANE = 1
     
-    assign busy     = v0_busy || v1_busy || v2_busy;
-    assign in_ready = v0_ready && v1_ready && v2_ready;
+    function automatic triangle_t clamp_triangle(input triangle_t t);
+        triangle_t r;
+        logic any_in_front;
+        begin
+            r = t;
+
+            // Check if any vertex is in front of near plane
+            any_in_front = (t.v0.pos.z > NEAR_PLANE_Q16_16) ||
+                           (t.v1.pos.z > NEAR_PLANE_Q16_16) ||
+                           (t.v2.pos.z > NEAR_PLANE_Q16_16);
+
+            // If any vertex is in front, clamp all vertices
+            if (any_in_front) begin
+                if(t.v0.pos.z < NEAR_PLANE_Q16_16)
+                    r.v0.pos.z = NEAR_PLANE_Q16_16;
+                if(t.v1.pos.z < NEAR_PLANE_Q16_16)
+                    r.v1.pos.z = NEAR_PLANE_Q16_16;
+                if(t.v2.pos.z < NEAR_PLANE_Q16_16)
+                    r.v2.pos.z = NEAR_PLANE_Q16_16;
+            end
+
+            return r;
+        end
+    endfunction
+
+    assign busy      = v0_busy || v1_busy || v2_busy;
+    assign in_ready  = v0_ready && v1_ready && v2_ready;
     assign out_valid = all_valid;
 endmodule

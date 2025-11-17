@@ -60,6 +60,7 @@ module frame_driver #(
     logic create_done_sync_0;
     logic create_done_sync;
     logic color_flag;
+    color12_t color_reg;
     transform_t transform_reg;
     
     always_ff @(posedge clk or posedge rst) begin 
@@ -111,14 +112,14 @@ module frame_driver #(
             wait_ctr      <= '0;
             color_flag    <= '0;
             capture_inst   <= '0;
+            color_reg         <= 12'hFFF;
             background_color  <= 12'hFFF;    // 12'h223; default clear colour
             frame_feed_done   <= '0;
             transform_setup_r <= '0;
         end else begin 
-            if(!color_flag) begin
-                background_color  <= 12'hFFF;
-                color_flag <= 1;
-            end
+//            background_color  <= 12'hFFF;
+//            if(color_flag) 
+//                background_color <= color_reg;
             if(create_done_sync) begin
                 // Default outputs per cycle
                 out_valid <= '0;
@@ -133,7 +134,7 @@ module frame_driver #(
                         if (out_ready) begin
                             next_inst_id <= next_inst_id +1;
                             inst_id_rd   <= next_inst_id;
-                            frame_state <= LOAD_BASE;
+                            frame_state  <= LOAD_BASE;
                         end
                     end
                     
@@ -143,13 +144,13 @@ module frame_driver #(
                     LOAD_BASE: begin
                         if(wait_ctr == 2) begin
                             wait_ctr <= 0;
+                            transform_reg <= transform_in;
                             frame_state <= REQUEST_TRI;
                             if(inst_id_rd == 0)
                                 frame_state <= OUTPUT_TRI;
                         end else if(wait_ctr == 1)begin
                             wait_ctr      <= wait_ctr+1;
                             capture_inst  <= 0;
-                            transform_reg <= transform_in;
                         end else if(wait_ctr == 0) begin
                             capture_inst  <= 1;
                             wait_ctr      <= wait_ctr+1;
@@ -198,8 +199,9 @@ module frame_driver #(
                         if (inst_id_rd == 0 && out_ready) begin 
                             transform_setup_r.camera_transform_valid <= 1;
                             transform_setup_r.camera_transform       <= transform_reg;
-                            background_color                         <= id_data[11:0];
+                            background_color                         <= id_data[11:0]; // color_reg
                             out_valid  <= 1;
+                            color_flag <= 1;
                             if(out_valid == 1)
                                 frame_state <= IDLE;
                             if(max_inst_sync == 0)

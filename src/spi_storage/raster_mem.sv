@@ -250,8 +250,7 @@ module raster_mem #(
 
     inst_t inst_cast;
     assign inst_cast     = inst_t'(inst_dout_r);
-    assign transform_out = transform_t'(inst_dout_r[TRANS_W+ID_W*2-1:ID_W*2]); // slice out the two IDs
-    assign id_data       = {inst_cast.vert_id, inst_cast.tri_id};
+//    assign transform_out = transform_t'(inst_dout_r[TRANS_W+ID_W*2-1:ID_W*2]); // slice out the two IDs
 
     // Descriptor outputs (synchronized)
     logic done_sync_0, done_sync_1;
@@ -266,6 +265,8 @@ module raster_mem #(
             if (done_sync_1 && capture_inst) begin
                 vert_table_rd_addr <= inst_cast.vert_id;
                 tri_table_rd_addr  <= inst_cast.tri_id;
+                transform_out      <= transform_t'(inst_cast.transform);
+                id_data            <= {inst_cast.vert_id, inst_cast.tri_id};
             end
         end
     end
