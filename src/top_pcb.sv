@@ -2,9 +2,9 @@
 `timescale 1ns / 1ps
 
 module top_pcb #( // 12_000 brukte 150 tiles
-    parameter MAX_VERT  = 16_384,     // 2^13 bit = 8192,  
-    parameter MAX_TRI   = 16_384,     // 2^13 bit = 8192,  2^14 bit = 16_384
-    parameter MAX_INST  = 256,      // maximum instences
+    parameter MAX_VERT  = 16_384,    // 2^14 bit = 16_384,  
+    parameter MAX_TRI   = 16_384,    // 2^14 bit = 16_384,
+    parameter MAX_INST  = 256,       // maximum instences
     parameter SCK_FILTER    = 50,    // Min filter period for edge detection, we want n_max = T_raw/(2*T_ref)
     localparam MAX_VERT_BUF = 256,   // maximum distinct vertex buffers
     localparam MAX_TRI_BUF  = 256,   // maximum distinct triangle buffers
@@ -31,8 +31,6 @@ module top_pcb #( // 12_000 brukte 150 tiles
     inout wire logic [3:0] spi_io,
     input wire logic spi_clk,
     input wire logic spi_cs_n,
-
-//    input wire logic rst_n,
 
     // General Purpose I/O
     inout wire logic [5:0] gp_io,  
@@ -64,9 +62,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
     import buffer_id_pkg::*;
     logic rst_n = 1'b1; // active low reset 
 
-    // ----------------------------------------------------------------
     // Clocks
-    // ----------------------------------------------------------------
     logic clk_100m;
     logic clk_render;
     logic clk_locked;
@@ -87,9 +83,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
     );
 
     
-    // =========================================================
     // SPI clock synchronization and glitch filtering
-    // =========================================================
     logic sck_sync_level;
     logic sck_rise_pulse;
     logic sck_fall_pulse;
@@ -362,10 +356,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
     );
     
 
-
-    // ----------------------------------------------------------------
     // VGA timing
-    // ----------------------------------------------------------------
     localparam CORDW = 10;
     logic [CORDW-1:0] sx, sy;
     logic hsync, vsync, de, frame;
@@ -391,9 +382,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
     end
     wire frame_start_render = frame_pix_sync2 & ~frame_pix_sync2_d;
 
-    // ----------------------------------------------------------------
     // Framebuffer
-    // ----------------------------------------------------------------
     localparam FB_WIDTH  = 320;
     localparam FB_HEIGHT = 240;
     localparam NEAR_PLANE = 1;
@@ -412,9 +401,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
     assign fb_read_x = fb_sum_x[9:1];
     assign fb_read_y = fb_sum_y[8:1];
     
-    // ----------------------------------------------------------------
-    // Renderer outputs (render_manager -> depthbuffer)
-    // ----------------------------------------------------------------
+    // Renderer outputs
     logic [15:0] rm_x16, rm_y16;
     logic [N_BITS_FOR_DEPTH-1:0] rm_depth;
     color16_t    rm_color;
@@ -431,10 +418,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
             begin_frame <= frame_start_render && !renderer_busy && !frame_driver_busy;
     end
 
-    // ----------------------------------------------------------------
-    // Render manager (clear + triangles)
-    // ----------------------------------------------------------------
-    
+    // Render manager
     localparam color12_t CLEAR_COLOR = 12'h223;
     localparam int       FOCAL_LENGTH  = 256;
 
@@ -472,9 +456,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
         .busy             (renderer_busy)
     );
 
-    // ----------------------------------------------------------------
-    // Depth buffer (inserted here)
-    // ----------------------------------------------------------------
+    // Depth buffer
     logic [15:0] db_out_x, db_out_y;
     color16_t    db_out_color;
     logic        db_out_valid;
@@ -501,9 +483,8 @@ module top_pcb #( // 12_000 brukte 150 tiles
         .out_y           (db_out_y)
     );
 
-    // ----------------------------------------------------------------
-    // Framebuffer (now fed from depthbuffer)
-    // ----------------------------------------------------------------
+
+    // Framebuffer
     double_framebuffer #(
         .FB_WIDTH (FB_WIDTH),
         .FB_HEIGHT(FB_HEIGHT)
@@ -541,9 +522,7 @@ module top_pcb #( // 12_000 brukte 150 tiles
         .sram_r_lb_n (sram_r_lb_n)
     );
 
-    // ----------------------------------------------------------------
     // VGA output
-    // ----------------------------------------------------------------
     logic de_q;
     always_ff @(posedge clk_pix) begin
         de_q      <= de;
