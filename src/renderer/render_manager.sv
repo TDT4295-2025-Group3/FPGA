@@ -139,8 +139,6 @@ module render_manager #(
     );
     assign screen_filler_depth = {N_BITS_FOR_DEPTH{1'b1}}; // max depth in compressed format
 
-
-    // --- transformer wiring (triangle -> transformer -> rasterizer) ---
     logic        transformer_in_valid, transformer_in_ready, transformer_out_valid, transformer_out_ready, transformer_busy;
     triangle_t   transformer_out_triangle;
 
@@ -168,7 +166,6 @@ module render_manager #(
         .busy(transformer_busy)
     );
 
-    // rasterizer now consumes the transformer's output
     logic rasterizer_in_valid, rasterizer_in_ready, rasterizer_busy, rasterizer_out_valid;
     assign rasterizer_in_valid = (state == TRIANGLE) ? transformer_out_valid : 1'b0;
     assign transformer_out_ready = rasterizer_in_ready;

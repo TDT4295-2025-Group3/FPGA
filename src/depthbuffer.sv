@@ -29,7 +29,6 @@ module depthbuffer #(
     localparam int ADDR_WIDTH        = $clog2(FB_DEPTH);
     localparam int STORED_DEPTH_BITS = DEPTH_BITS - BITS_ACCURACY_DROP;
 
-    // quantize full-depth value to stored representation (drop LSBs)
     function automatic logic [STORED_DEPTH_BITS-1:0] quantize_depth (
         input logic [DEPTH_BITS-1:0] d
     );
@@ -41,7 +40,7 @@ module depthbuffer #(
     logic [STORED_DEPTH_BITS-1:0] depth_read;
     logic passed_depth_test;
 
-    // pipeline aligners for inputs (to match BRAM read latency)
+    // pipeline aligners for inputs
     logic        in_valid_s1,         in_valid_s2;
     logic        in_compare_depth_s1, in_compare_depth_s2;
     color16_t    in_color_s1,         in_color_s2;
@@ -72,7 +71,7 @@ module depthbuffer #(
         addr_reg <= in_y * FB_WIDTH + in_x;      // read address (stage 2)
     end
 
-    // --- Pipeline stage 2: synchronous BRAM read ---
+    // Pipeline stage 2: BRAM read
     logic [STORED_DEPTH_BITS-1:0] depth_read_bram;
 
     // BRAM read (registered output)
@@ -96,7 +95,6 @@ module depthbuffer #(
     // RAW bypass applied *outside* the RAM to keep BRAM inference clean
     always_comb begin
         depth_read = depth_read_bram;
-        // FIX: use S2-aligned address for bypass (addr_wr_s2), not S1 addr_reg
         if (wr_bypass_vld && (wr_bypass_addr == addr_wr_s2)) begin
             depth_read = wr_bypass_data;
         end
@@ -105,7 +103,7 @@ module depthbuffer #(
     // compare using quantized depth
     assign passed_depth_test = (in_compare_depth_s2 == 1'b0) || (in_depth_q_s2 < depth_read);
 
-    // --- Pipeline stage 3: comparison + writeback ---
+    // Pipeline stage 3: comparison + writeback
     always_ff @(posedge clk) begin
         /* verilator lint_off SYNCASYNCNET */
         if (rst) begin

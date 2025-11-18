@@ -19,7 +19,7 @@ module pixel_eval #(
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y,
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y,
     input  wire logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y,
-    input  wire logic signed [DENOM_INV_BITS-1:0]  denom_inv,    // signed: 1/denom
+    input  wire logic signed [DENOM_INV_BITS-1:0]  denom_inv, 
     input  wire color12_t                           v0_color, v1_color, v2_color,
     input  wire q16_16_t                            v0_depth, v1_depth, v2_depth,
     input  wire logic                               in_valid,
@@ -39,7 +39,7 @@ module pixel_eval #(
         logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y;
         logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y;
         logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y;
-        logic signed [DENOM_INV_BITS-1:0]  denom_inv; // signed 1/denom
+        logic signed [DENOM_INV_BITS-1:0]  denom_inv;
         color12_t                           v0_color, v1_color, v2_color;
         q16_16_t                            v0_depth, v1_depth, v2_depth;
     } pixel_state_t;
@@ -52,7 +52,6 @@ module pixel_eval #(
     typedef struct packed {
         logic        valid;
         pixel_state_t pixel;
-        // e2 = p - v0 (in SUBPIXEL units)
         logic signed [16+SUBPIXEL_BITS-1:0] e2x;
         logic signed [16+SUBPIXEL_BITS-1:0] e2y;
     } pixel_eval_stage2_t;
@@ -60,7 +59,6 @@ module pixel_eval #(
     typedef struct packed {
         logic        valid;
         pixel_state_t pixel;
-        // numerators in Q(2*SUBPIXEL_BITS)
         logic signed [32+2*SUBPIXEL_BITS-1:0] v_num;
         logic signed [32+2*SUBPIXEL_BITS-1:0] w_num;
         logic signed [32+2*SUBPIXEL_BITS-1:0] u_num;
@@ -69,7 +67,6 @@ module pixel_eval #(
     typedef struct packed {
         logic        valid;
         pixel_state_t pixel;
-        // Top-Left rule: numerators normalized by sign(denom)
         logic signed [32+2*SUBPIXEL_BITS-1:0] vN, wN, uN;
         logic signed [32+2*SUBPIXEL_BITS-1:0] v_num;
         logic signed [32+2*SUBPIXEL_BITS-1:0] w_num;
@@ -119,7 +116,7 @@ module pixel_eval #(
         s1_next.pixel.e0y        = e0y;
         s1_next.pixel.e1x        = e1x;
         s1_next.pixel.e1y        = e1y;
-        s1_next.pixel.denom_inv  = denom_inv;     // signed 1/denom
+        s1_next.pixel.denom_inv  = denom_inv; 
         s1_next.pixel.v0_color   = v0_color;
         s1_next.pixel.v1_color   = v1_color;
         s1_next.pixel.v2_color   = v2_color;
@@ -150,7 +147,6 @@ module pixel_eval #(
     end
 
     // Stage 3: area2 numerators (cross products)
-    // v_num = cross(e2, e1); w_num = cross(e0, e2); u_num = denom - v_num - w_num
     always_comb begin
         logic signed [32+2*SUBPIXEL_BITS-1:0] e2x_e1y, e2y_e1x, e0x_e2y, e0y_e2x;
         logic signed [32+2*SUBPIXEL_BITS-1:0] denom_local;
@@ -178,7 +174,7 @@ module pixel_eval #(
 
     // Stage 4: inside test (Top-Left), normalize by sign(denom)
     always_comb begin
-        logic denom_neg; // sign(denom) == sign(denom_inv)
+        logic denom_neg; 
         logic signed [16+SUBPIXEL_BITS:0] edge_u_dx, edge_u_dy;
         logic signed [16+SUBPIXEL_BITS:0] edge_v_dx, edge_v_dy;
         logic signed [16+SUBPIXEL_BITS:0] edge_w_dx, edge_w_dy;
@@ -190,7 +186,7 @@ module pixel_eval #(
 
         denom_neg = ($signed(s3_reg.pixel.denom_inv) < 0);
 
-        // Normalize numerators for TL rule with sign(denom)
+        // Normalize numerators for top left rule
         s4_next.vN = denom_neg ? -s3_reg.v_num : s3_reg.v_num;
         s4_next.wN = denom_neg ? -s3_reg.w_num : s3_reg.w_num;
         s4_next.uN = denom_neg ? -s3_reg.u_num : s3_reg.u_num;
@@ -198,7 +194,7 @@ module pixel_eval #(
         s4_next.v_num = s3_reg.v_num;
         s4_next.w_num = s3_reg.w_num;
 
-        // Edge vectors for TL rule
+        // Edge vectors for top left rule
         edge_u_dx = $signed(s3_reg.pixel.e1x) - $signed(s3_reg.pixel.e0x);
         edge_u_dy = $signed(s3_reg.pixel.e1y) - $signed(s3_reg.pixel.e0y);
         edge_v_dx = -$signed(s3_reg.pixel.e1x);
@@ -206,7 +202,7 @@ module pixel_eval #(
         edge_w_dx =  $signed(s3_reg.pixel.e0x);
         edge_w_dy =  $signed(s3_reg.pixel.e0y);
 
-        // Top-Left include rule
+        // determine if edges are top-left
         inc_u = (edge_u_dy < 0) || ((edge_u_dy == 0) && (edge_u_dx > 0));
         inc_v = (edge_v_dy < 0) || ((edge_v_dy == 0) && (edge_v_dx > 0));
         inc_w = (edge_w_dy < 0) || ((edge_w_dy == 0) && (edge_w_dx > 0));
@@ -222,10 +218,9 @@ module pixel_eval #(
         else if (s4_ready) s4_reg <= s4_next;
     end
 
-    // Stage 5: weights, with signed denom_inv (1/denom)
+    // Stage 5: weights, with signed denom_inv
     localparam int WEIGHT_SHIFT = 2*SUBPIXEL_BITS + DENOM_INV_FBITS - 16;
 
-    // 2SUBPIXEL_BITS + DENOM_FINV_BITS -> 16
     q16_16_t v_w, w_w, u_w;
 
     always_comb begin
@@ -235,14 +230,12 @@ module pixel_eval #(
         v_w = '0; w_w = '0; u_w = '0;
 
         if (s4_reg.is_inside) begin
-            // Signed multiply: num * (1/denom). For interior pixels this is >=0.
             logic signed [32+2*SUBPIXEL_BITS+DENOM_INV_BITS-1:0] v_mul, w_mul;
 
             v_mul = $signed(s4_reg.v_num) * $signed(s4_reg.pixel.denom_inv);
             w_mul = $signed(s4_reg.w_num) * $signed(s4_reg.pixel.denom_inv);
 
             if (WEIGHT_SHIFT > 0) begin
-                // round-to-nearest
                 v_w = q16_16_t'((v_mul + (1 <<< (WEIGHT_SHIFT-1))) >>> WEIGHT_SHIFT);
                 w_w = q16_16_t'((w_mul + (1 <<< (WEIGHT_SHIFT-1))) >>> WEIGHT_SHIFT);
             end else begin
@@ -250,7 +243,6 @@ module pixel_eval #(
                 w_w = q16_16_t'(w_mul <<< (-WEIGHT_SHIFT));
             end
 
-            // guard against tiny negative due to ties/rounding
             if ($signed(v_w) < 0) v_w = '0;
             if ($signed(w_w) < 0) w_w = '0;
 
@@ -327,7 +319,6 @@ module pixel_eval #(
             b_w = $signed(s5_reg.w_w) * $signed({27'b0, b2_5});
             b_acc = ((b_u + b_v + b_w + 32'h0000_8000) >>> 16);
 
-            // pack with clamping to bit widths
             s6_next.color[15:11] = (r_acc > 5'd31) ? 5'd31 : r_acc[4:0];
             s6_next.color[10:5]  = (g_acc > 6'd63) ? 6'd63 : g_acc[5:0];
             s6_next.color[4:0]   = (b_acc > 5'd31) ? 5'd31 : b_acc[4:0];
@@ -336,25 +327,18 @@ module pixel_eval #(
             tmp_depth_v = s5_reg.v_w * s5_reg.pixel.v1_depth;
             tmp_depth_w = s5_reg.w_w * s5_reg.pixel.v2_depth;
             s6_next.depth       = ((tmp_depth_u + tmp_depth_v + tmp_depth_w + 32'h0000_8000) >>> 16);
-
-            //if new depth is bigger than the biggest depth or less than the smallest depth, clamp it
-            if (s6_next.depth > max3(s5_reg.pixel.v0_depth, s5_reg.pixel.v1_depth, s5_reg.pixel.v2_depth) ||
-                s6_next.depth < min3(s5_reg.pixel.v0_depth, s5_reg.pixel.v1_depth, s5_reg.pixel.v2_depth)) begin
-                $display("Warning: depth interpolation out of bounds: %0d (v0: %0d, v1: %0d, v2: %0d)", s6_next.depth, s5_reg.pixel.v0_depth, s5_reg.pixel.v1_depth, s5_reg.pixel.v2_depth);
-            end
         end else begin
             s6_next.color = '0;
             s6_next.depth = '0;
         end
     end
 
-    // Stage 6 reg (output register)
+    // Stage 6 output register
     always_ff @(posedge clk or posedge rst) begin
         if (rst) s6_reg <= '0;
         else if (s6_ready) s6_reg <= s6_next;
     end
 
-    // outputs
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             out_valid <= 1'b0;

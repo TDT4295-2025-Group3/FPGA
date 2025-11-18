@@ -217,12 +217,7 @@ module triangle_setup #(
                 div_out_valid <= 1'b1;
                 div_out_data  <= inv_y;
             end
-
-            // if (inv_done && !inv_valid) begin
-            //     if (inv_dbz) $display("%t triangle_setup: DROP due to division by zero", $time);
-            //     if (inv_ovf) $display("%t triangle_setup: DROP due to overflow", $time);
-            // end
-
+            
             if (div_out_valid && (!out_valid || out_ready)) begin
                 div_out_valid <= 1'b0;
             end
