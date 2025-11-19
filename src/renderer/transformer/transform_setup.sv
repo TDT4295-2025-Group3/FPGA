@@ -24,7 +24,7 @@ module transform_setup (
     typedef enum logic [1:0] {S_IDLE, S_WAIT, S_OUTPUT} state_t;
     state_t state;
     
-    // Latched transaction
+    // Latched transform_setup
     transform_setup_t transform_setup_r;
 
     // Rotation parameters
@@ -101,20 +101,19 @@ module transform_setup (
                 S_IDLE: begin
                     out_valid <= 1'b0;
                     if (in_valid && in_ready) begin
-                        // latch transaction
                         transform_setup_r <= transform_setup;
                         state <= S_WAIT;
                     end
                 end
 
                 S_WAIT: begin
-                    // one-cycle compute wait
+                    // one cycle compute wait
                     state <= S_OUTPUT;
                 end
 
                 S_OUTPUT: begin
 
-                    // drive either model or camera fields depending on flags
+                    // drive either model or camera fields depending on which is valid
                     if (transform_setup_r.model_transform_valid) begin
                         out_model_world.triangle    <= transform_setup_r.triangle;
                         out_model_world.model.pos   <= transform_setup_r.model_transform.pos;
@@ -150,6 +149,8 @@ module transform_setup (
                         out_model_world.camera.rot_mtx.R32 <= R32;
                         out_model_world.camera.rot_mtx.R33 <= R33;
                         out_valid <= 1'b1;
+
+                        // We need at least one cycle delay for both out valid and out ready to be high together
                         if (out_ready && out_valid) begin
                             state <= S_IDLE;
                             out_valid <= 1'b0;
