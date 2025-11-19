@@ -1,0 +1,357 @@
+`default_nettype none
+`timescale 1ns / 1ps
+
+import math_pkg::*;
+import color_pkg::*;
+
+module pixel_eval #(
+    parameter int WIDTH  = 320,
+    parameter int HEIGHT = 240,
+    parameter int SUBPIXEL_BITS = 4,
+    parameter int DENOM_INV_BITS = 36,
+    parameter int DENOM_INV_FBITS = 35
+) (
+    input  wire logic clk,
+    input  wire logic rst,
+
+    input  wire logic [$clog2(WIDTH)-1:0]           pixel_x,
+    input  wire logic [$clog2(HEIGHT)-1:0]          pixel_y,
+    input  wire logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y,
+    input  wire logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y,
+    input  wire logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y,
+    input  wire logic signed [DENOM_INV_BITS-1:0]  denom_inv, 
+    input  wire color12_t                           v0_color, v1_color, v2_color,
+    input  wire q16_16_t                            v0_depth, v1_depth, v2_depth,
+    input  wire logic                               in_valid,
+    output      logic                               in_ready,
+
+    output      logic [$clog2(WIDTH)-1:0]           out_x,
+    output      logic [$clog2(HEIGHT)-1:0]          out_y,
+    output      color16_t                           out_color,
+    output      q16_16_t                            out_depth,
+    output      logic                               out_valid,
+    input  wire logic                               out_ready,
+    output      logic                               busy
+);
+    typedef struct packed {
+        logic [$clog2(WIDTH)-1:0]           x;
+        logic [$clog2(HEIGHT)-1:0]          y;
+        logic signed [16+SUBPIXEL_BITS-1:0] v0x, v0y;
+        logic signed [16+SUBPIXEL_BITS-1:0] e0x, e0y;
+        logic signed [16+SUBPIXEL_BITS-1:0] e1x, e1y;
+        logic signed [DENOM_INV_BITS-1:0]  denom_inv;
+        color12_t                           v0_color, v1_color, v2_color;
+        q16_16_t                            v0_depth, v1_depth, v2_depth;
+    } pixel_state_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+    } pixel_eval_stage1_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        logic signed [16+SUBPIXEL_BITS-1:0] e2x;
+        logic signed [16+SUBPIXEL_BITS-1:0] e2y;
+    } pixel_eval_stage2_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] v_num;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] w_num;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] u_num;
+    } pixel_eval_stage3_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] vN, wN, uN;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] v_num;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] w_num;
+        logic        is_inside;
+    } pixel_eval_stage4_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        q16_16_t     v_w, w_w, u_w;
+    } pixel_eval_stage5_t;
+
+    typedef struct packed {
+        logic        valid;
+        pixel_state_t pixel;
+        color16_t    color;
+        q16_16_t     depth;
+    } pixel_output_t;
+
+    // handshake
+    logic s1_ready, s2_ready, s3_ready, s4_ready, s5_ready, s6_ready;
+    pixel_eval_stage1_t s1_reg, s1_next;
+    pixel_eval_stage2_t s2_reg, s2_next;
+    pixel_eval_stage3_t s3_reg, s3_next;
+    pixel_eval_stage4_t s4_reg, s4_next;
+    pixel_eval_stage5_t s5_reg, s5_next;
+    pixel_output_t      s6_reg, s6_next;
+
+    assign s1_ready = !s1_reg.valid || s2_ready;
+    assign s2_ready = !s2_reg.valid || s3_ready;
+    assign s3_ready = !s3_reg.valid || s4_ready;
+    assign s4_ready = !s4_reg.valid || s5_ready;
+    assign s5_ready = !s5_reg.valid || s6_ready;
+    assign s6_ready = !s6_reg.valid || out_ready;
+
+    assign in_ready = s1_ready;
+    assign busy     = s1_reg.valid || s2_reg.valid || s3_reg.valid || s4_reg.valid || s5_reg.valid || s6_reg.valid || out_valid;
+
+    // Stage 1
+    always_comb begin
+        s1_next.valid            = in_valid;
+        s1_next.pixel.x          = pixel_x;
+        s1_next.pixel.y          = pixel_y;
+        s1_next.pixel.v0x        = v0x;
+        s1_next.pixel.v0y        = v0y;
+        s1_next.pixel.e0x        = e0x;
+        s1_next.pixel.e0y        = e0y;
+        s1_next.pixel.e1x        = e1x;
+        s1_next.pixel.e1y        = e1y;
+        s1_next.pixel.denom_inv  = denom_inv; 
+        s1_next.pixel.v0_color   = v0_color;
+        s1_next.pixel.v1_color   = v1_color;
+        s1_next.pixel.v2_color   = v2_color;
+        s1_next.pixel.v0_depth   = v0_depth;
+        s1_next.pixel.v1_depth   = v1_depth;
+        s1_next.pixel.v2_depth   = v2_depth;
+    end
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) s1_reg <= '0;
+        else if (s1_ready) s1_reg <= s1_next;
+    end
+
+    // Stage 2: e2 = p - v0 (pixel center)
+    always_comb begin
+        logic signed [16+SUBPIXEL_BITS:0] px_sp, py_sp;
+        s2_next.valid = s1_reg.valid;
+        s2_next.pixel = s1_reg.pixel;
+
+        px_sp = $signed({1'b0, s1_reg.pixel.x}) <<< SUBPIXEL_BITS;
+        py_sp = $signed({1'b0, s1_reg.pixel.y}) <<< SUBPIXEL_BITS;
+
+        s2_next.e2x = (px_sp + $signed(1 <<< (SUBPIXEL_BITS-1))) - $signed(s1_reg.pixel.v0x);
+        s2_next.e2y = (py_sp + $signed(1 <<< (SUBPIXEL_BITS-1))) - $signed(s1_reg.pixel.v0y);
+    end
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) s2_reg <= '0;
+        else if (s2_ready) s2_reg <= s2_next;
+    end
+
+    // Stage 3: area2 numerators (cross products)
+    always_comb begin
+        logic signed [32+2*SUBPIXEL_BITS-1:0] e2x_e1y, e2y_e1x, e0x_e2y, e0y_e2x;
+        logic signed [32+2*SUBPIXEL_BITS-1:0] denom_local;
+
+        s3_next.valid = s2_reg.valid;
+        s3_next.pixel = s2_reg.pixel;
+
+        e2x_e1y = $signed(s2_reg.e2x) * $signed(s2_reg.pixel.e1y);
+        e2y_e1x = $signed(s2_reg.e2y) * $signed(s2_reg.pixel.e1x);
+        e0x_e2y = $signed(s2_reg.pixel.e0x) * $signed(s2_reg.e2y);
+        e0y_e2x = $signed(s2_reg.pixel.e0y) * $signed(s2_reg.e2x);
+
+        s3_next.v_num = e2x_e1y - e2y_e1x;
+        s3_next.w_num = e0x_e2y - e0y_e2x;
+
+        denom_local = $signed(s2_reg.pixel.e0x) * $signed(s2_reg.pixel.e1y)
+                    - $signed(s2_reg.pixel.e0y) * $signed(s2_reg.pixel.e1x);
+
+        s3_next.u_num = denom_local - s3_next.v_num - s3_next.w_num;
+    end
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) s3_reg <= '0;
+        else if (s3_ready) s3_reg <= s3_next;
+    end
+
+    // Stage 4: inside test (Top-Left), normalize by sign(denom)
+    always_comb begin
+        logic denom_neg; 
+        logic signed [16+SUBPIXEL_BITS:0] edge_u_dx, edge_u_dy;
+        logic signed [16+SUBPIXEL_BITS:0] edge_v_dx, edge_v_dy;
+        logic signed [16+SUBPIXEL_BITS:0] edge_w_dx, edge_w_dy;
+        logic inc_u, inc_v, inc_w;
+        logic v_ok, w_ok, u_ok;
+
+        s4_next.valid = s3_reg.valid;
+        s4_next.pixel = s3_reg.pixel;
+
+        denom_neg = ($signed(s3_reg.pixel.denom_inv) < 0);
+
+        // Normalize numerators for top left rule
+        s4_next.vN = denom_neg ? -s3_reg.v_num : s3_reg.v_num;
+        s4_next.wN = denom_neg ? -s3_reg.w_num : s3_reg.w_num;
+        s4_next.uN = denom_neg ? -s3_reg.u_num : s3_reg.u_num;
+
+        s4_next.v_num = s3_reg.v_num;
+        s4_next.w_num = s3_reg.w_num;
+
+        // Edge vectors for top left rule
+        edge_u_dx = $signed(s3_reg.pixel.e1x) - $signed(s3_reg.pixel.e0x);
+        edge_u_dy = $signed(s3_reg.pixel.e1y) - $signed(s3_reg.pixel.e0y);
+        edge_v_dx = -$signed(s3_reg.pixel.e1x);
+        edge_v_dy = -$signed(s3_reg.pixel.e1y);
+        edge_w_dx =  $signed(s3_reg.pixel.e0x);
+        edge_w_dy =  $signed(s3_reg.pixel.e0y);
+
+        // determine if edges are top-left
+        inc_u = (edge_u_dy < 0) || ((edge_u_dy == 0) && (edge_u_dx > 0));
+        inc_v = (edge_v_dy < 0) || ((edge_v_dy == 0) && (edge_v_dx > 0));
+        inc_w = (edge_w_dy < 0) || ((edge_w_dy == 0) && (edge_w_dx > 0));
+
+        v_ok = (s4_next.vN > 0) || ((s4_next.vN == 0) && inc_v);
+        w_ok = (s4_next.wN > 0) || ((s4_next.wN == 0) && inc_w);
+        u_ok = (s4_next.uN > 0) || ((s4_next.uN == 0) && inc_u);
+
+        s4_next.is_inside = v_ok && w_ok && u_ok;
+    end
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) s4_reg <= '0;
+        else if (s4_ready) s4_reg <= s4_next;
+    end
+
+    // Stage 5: weights, with signed denom_inv
+    localparam int WEIGHT_SHIFT = 2*SUBPIXEL_BITS + DENOM_INV_FBITS - 16;
+
+    q16_16_t v_w, w_w, u_w;
+
+    always_comb begin
+        s5_next.valid = s4_reg.valid & s4_reg.is_inside;
+        s5_next.pixel = s4_reg.pixel;
+
+        v_w = '0; w_w = '0; u_w = '0;
+
+        if (s4_reg.is_inside) begin
+            logic signed [32+2*SUBPIXEL_BITS+DENOM_INV_BITS-1:0] v_mul, w_mul;
+
+            v_mul = $signed(s4_reg.v_num) * $signed(s4_reg.pixel.denom_inv);
+            w_mul = $signed(s4_reg.w_num) * $signed(s4_reg.pixel.denom_inv);
+
+            if (WEIGHT_SHIFT > 0) begin
+                v_w = q16_16_t'((v_mul + (1 <<< (WEIGHT_SHIFT-1))) >>> WEIGHT_SHIFT);
+                w_w = q16_16_t'((w_mul + (1 <<< (WEIGHT_SHIFT-1))) >>> WEIGHT_SHIFT);
+            end else begin
+                v_w = q16_16_t'(v_mul <<< (-WEIGHT_SHIFT));
+                w_w = q16_16_t'(w_mul <<< (-WEIGHT_SHIFT));
+            end
+
+            if ($signed(v_w) < 0) v_w = '0;
+            if ($signed(w_w) < 0) w_w = '0;
+
+            u_w = q16_16_t'(32'h0001_0000) - v_w - w_w;
+            if ($signed(u_w) < 0) u_w = '0;
+        end
+
+        s5_next.v_w = v_w;
+        s5_next.w_w = w_w;
+        s5_next.u_w = u_w;
+    end
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) s5_reg <= '0;
+        else if (s5_ready) s5_reg <= s5_next;
+    end
+
+    // Stage 6: interpolation using precomputed weights
+    logic signed [63:0] tmp_depth_u, tmp_depth_v, tmp_depth_w;
+    logic signed [63:0] r_u, r_v, r_w;
+    logic signed [63:0] g_u, g_v, g_w;
+    logic signed [63:0] b_u, b_v, b_w;
+    logic [15:0] r_acc, g_acc, b_acc;
+    logic [3:0] r0_4, g0_4, b0_4;
+    logic [3:0] r1_4, g1_4, b1_4;
+    logic [3:0] r2_4, g2_4, b2_4;
+    logic [4:0] r0_5, r1_5, r2_5;
+    logic [5:0] g0_6, g1_6, g2_6;
+    logic [4:0] b0_5, b1_5, b2_5;
+    always_comb begin
+        s6_next.valid = s5_reg.valid;
+        s6_next.pixel = s5_reg.pixel;
+
+        if (s5_reg.valid) begin
+
+            r0_4 = s5_reg.pixel.v0_color[11:8];
+            g0_4 = s5_reg.pixel.v0_color[7:4];
+            b0_4 = s5_reg.pixel.v0_color[3:0];
+
+            r1_4 = s5_reg.pixel.v1_color[11:8];
+            g1_4 = s5_reg.pixel.v1_color[7:4];
+            b1_4 = s5_reg.pixel.v1_color[3:0];
+
+            r2_4 = s5_reg.pixel.v2_color[11:8];
+            g2_4 = s5_reg.pixel.v2_color[7:4];
+            b2_4 = s5_reg.pixel.v2_color[3:0];
+
+            r0_5 = {r0_4, r0_4[3]};
+            r1_5 = {r1_4, r1_4[3]};
+            r2_5 = {r2_4, r2_4[3]};
+
+            g0_6 = {g0_4, g0_4[3:2]};
+            g1_6 = {g1_4, g1_4[3:2]};
+            g2_6 = {g2_4, g2_4[3:2]};
+
+            b0_5 = {b0_4, b0_4[3]};
+            b1_5 = {b1_4, b1_4[3]};
+            b2_5 = {b2_4, b2_4[3]};
+
+            // Red (5 bits)
+            r_u = $signed(s5_reg.u_w) * $signed({27'b0, r0_5});
+            r_v = $signed(s5_reg.v_w) * $signed({27'b0, r1_5});
+            r_w = $signed(s5_reg.w_w) * $signed({27'b0, r2_5});
+            r_acc = ((r_u + r_v + r_w + 32'h0000_8000) >>> 16);
+
+            // Green (6 bits)
+            g_u = $signed(s5_reg.u_w) * $signed({26'b0, g0_6});
+            g_v = $signed(s5_reg.v_w) * $signed({26'b0, g1_6});
+            g_w = $signed(s5_reg.w_w) * $signed({26'b0, g2_6});
+            g_acc = ((g_u + g_v + g_w + 32'h0000_8000) >>> 16);
+
+            // Blue (5 bits)
+            b_u = $signed(s5_reg.u_w) * $signed({27'b0, b0_5});
+            b_v = $signed(s5_reg.v_w) * $signed({27'b0, b1_5});
+            b_w = $signed(s5_reg.w_w) * $signed({27'b0, b2_5});
+            b_acc = ((b_u + b_v + b_w + 32'h0000_8000) >>> 16);
+
+            s6_next.color[15:11] = (r_acc > 5'd31) ? 5'd31 : r_acc[4:0];
+            s6_next.color[10:5]  = (g_acc > 6'd63) ? 6'd63 : g_acc[5:0];
+            s6_next.color[4:0]   = (b_acc > 5'd31) ? 5'd31 : b_acc[4:0];
+
+            tmp_depth_u = s5_reg.u_w * s5_reg.pixel.v0_depth;
+            tmp_depth_v = s5_reg.v_w * s5_reg.pixel.v1_depth;
+            tmp_depth_w = s5_reg.w_w * s5_reg.pixel.v2_depth;
+            s6_next.depth       = ((tmp_depth_u + tmp_depth_v + tmp_depth_w + 32'h0000_8000) >>> 16);
+        end else begin
+            s6_next.color = '0;
+            s6_next.depth = '0;
+        end
+    end
+
+    // Stage 6 output register
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) s6_reg <= '0;
+        else if (s6_ready) s6_reg <= s6_next;
+    end
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            out_valid <= 1'b0;
+            out_x     <= '0;
+            out_y     <= '0;
+            out_color <= '0;
+            out_depth <= '0;
+        end else if (!out_valid || out_ready) begin
+            out_valid <= s6_reg.valid;
+            out_x     <= s6_reg.pixel.x;
+            out_y     <= s6_reg.pixel.y;
+            out_color <= s6_reg.color;
+            out_depth <= s6_reg.depth;
+        end
+    end
+endmodule

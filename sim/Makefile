@@ -1,19 +1,33 @@
+# ================================
 # Makefile for Verilator VGA Simulator
-VERILATOR      = verilator
-VERILATOR_FLAGS = --trace -cc --exe \
-    -Wall -O3 -D_REENTRANT \
-    -Wno-UNUSED -Wno-UNDRIVEN -Wno-WIDTH -Wno-STMTDLY \
-    -I/usr/include/SDL2 -D_REENTRANT
+# ================================
 
-SRC = $(wildcard ../src/*.sv) stubs/BUFG.sv stubs/MMCME2_BASE.sv main.cpp top_sim.sv
+VERILATOR       = verilator
+VERILATOR_FLAGS = --trace -cc --exe \
+	-Wall -O3 -D_REENTRANT \
+	-Wno-UNUSED -Wno-UNDRIVEN -Wno-WIDTH -Wno-STMTDLY \
+	-Wno-PINCONNECTEMPTY  \
+	-I/usr/include/SDL2 -D_REENTRANT -Wno-IMPORTSTAR 
+
+FILELIST   = ../filelist.f
+SOURCELIST := $(shell cat $(FILELIST))
+SRC      := $(addprefix ../, $(SOURCELIST)) stubs/BUFG.sv stubs/MMCME2_BASE.sv stubs/div_rasterizer.sv main.cpp top_sim.sv
 
 TOP_MODULE = top_sim
 BUILD_DIR  = obj_dir
 TARGET     = vga_sim
 
+.PHONY: all clean show-src
+
 all: $(TARGET)
 
+show-src:
+	@echo "SystemVerilog compilation order:"
+	@echo $(SRC)
+
 $(TARGET): $(SRC)
+	@echo "Compiling SystemVerilog files in order:"
+	@echo $(SRC)
 	@echo "Running Verilator (generating C++, with --trace)..."
 	$(VERILATOR) $(VERILATOR_FLAGS) $(SRC) --top-module $(TOP_MODULE)
 	@echo "Building generated objects and final binary..."

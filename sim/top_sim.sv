@@ -4,6 +4,7 @@
 module top_sim (
     input  wire logic clk_100m,     // 100 MHz clock
     input  wire logic btn_rst_n,    // reset button
+    input  wire logic [2:0] sw,
     output      logic vga_hsync,    // VGA horizontal sync
     output      logic vga_vsync,    // VGA vertical sync
     output      logic [3:0] vga_r,  // 4-bit VGA red
@@ -16,6 +17,7 @@ module top_sim (
     top top_inst (
         .clk_100m(clk_100m),
         .btn_rst_n(btn_rst_n),
+        .sw(sw),
         .vga_hsync(vga_hsync),
         .vga_vsync(vga_vsync),
         .vga_r(vga_r),
@@ -24,6 +26,6 @@ module top_sim (
     );
     
     // Connect to the internal pixel clock for simulation
-    // Note: You'll need to make clk_pix public in the top module
-    assign clk_pix = top_inst.clock_pix_inst.clk_pix;
+    assign clk_pix = top_inst.clocks_inst.clk_pix;
+
 endmodule
